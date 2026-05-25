@@ -9,6 +9,7 @@ Prerequisites
 Config
 - API base URL is configurable via `VITE_API_BASE_URL` (defaults to same-origin '').
 - During `npm run dev`, Vite proxies `/api` to `http://localhost:3000` to avoid CORS.
+- In the Docker image, nginx proxies `/api` to `TRACKER_SERVER_URL` at container runtime.
 
 Setup
 1. cd web
@@ -31,9 +32,18 @@ Pages
 Notes
 - Endpoints are based on `openapi.yml` and `internal/api/routes/routes.go`.
 - Some features use legacy endpoints (`/api/v1/manage/procents`, `/api/v1/task/plan-percent/change`).
-- If the API runs on a different host/port in production, set `VITE_API_BASE_URL` accordingly (e.g., `https://api.example.com`).
+- For local Vite builds that call an absolute API URL, set `VITE_API_BASE_URL` (e.g., `https://api.example.com`).
 
 Docker (web only)
-- Build: `docker build -t ghcr.io/egormak/tracker-web:$(date +%F) --build-arg VITE_API_BASE_URL=http://localhost:3000 .`
-- Run: `docker run -it --rm -p 5173:80 ghcr.io/egormak/tracker-web:$(date +%F)`
+- Build: `docker build -t ghcr.io/egormak/tracker-web:$(date +%F) .`
+- Run with the default Docker network backend name (`api:3000`):
+  `docker run -it --rm -p 5173:80 ghcr.io/egormak/tracker-web:$(date +%F)`
+- Run against a tracker-server by IP address and port:
+  `docker run -it --rm -p 5173:80 -e TRACKER_SERVER_URL=http://10.200.0.1:8080 ghcr.io/egormak/tracker-web:$(date +%F)`
 - Open http://localhost:5173
+
+The container serves the React app with nginx and proxies browser calls from `/api/...` to `TRACKER_SERVER_URL`. Use `http://api:3000` when both containers share a Docker network and the backend service is named `api`. Use the exposed host IP and port, such as `http://10.200.0.1:8080`, when connecting through the host or another machine.
+
+GitHub Actions
+- `.github/workflows/docker-image.yml` builds the Docker image for pushes and pull requests to `main`.
+- On pushes to `main`, it publishes `ghcr.io/egormak/tracker-web:<YYYY-MM-DD>` and `ghcr.io/egormak/tracker-web:latest` to GitHub Container Registry.
