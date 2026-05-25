@@ -36,13 +36,35 @@ Notes
 
 Docker (web only)
 - Build: `docker build -t ghcr.io/egormak/tracker-web:$(date +%F) .`
-- Run with the default Docker network backend name (`api:3000`):
-  `docker run -it --rm -p 5173:80 ghcr.io/egormak/tracker-web:$(date +%F)`
+- Run on the existing `tracker` Docker network and connect to the tracker-server container named `tracker`:
+  `docker run -d --name tracker-web --network tracker -p 5173:80 -e TRACKER_SERVER_URL=http://tracker:3000 ghcr.io/egormak/tracker-web:$(date +%F)`
 - Run against a tracker-server by IP address and port:
   `docker run -it --rm -p 5173:80 -e TRACKER_SERVER_URL=http://10.200.0.1:8080 ghcr.io/egormak/tracker-web:$(date +%F)`
 - Open http://localhost:5173
 
-The container serves the React app with nginx and proxies browser calls from `/api/...` to `TRACKER_SERVER_URL`. Use `http://api:3000` when both containers share a Docker network and the backend service is named `api`. Use the exposed host IP and port, such as `http://10.200.0.1:8080`, when connecting through the host or another machine.
+The container serves the React app with nginx and proxies browser calls from `/api/...` to `TRACKER_SERVER_URL`. Use `http://tracker:3000` when both containers share the `tracker` Docker network and the backend container is named `tracker`. Use the exposed host IP and port, such as `http://10.200.0.1:8080`, when connecting through the host or another machine.
+
+To replace an existing web container created with Docker's random name:
+
+```bash
+docker stop relaxed_mayer
+docker rm relaxed_mayer
+docker run -d \
+  --name tracker-web \
+  --network tracker \
+  -p 5173:80 \
+  -e TRACKER_SERVER_URL=http://tracker:3000 \
+  ghcr.io/egormak/tracker-web:2026-05-25
+```
+
+Verify the deployment:
+
+```bash
+docker ps
+docker logs tracker-web
+curl http://localhost:5173
+curl http://localhost:5173/api/v1/timer/get
+```
 
 GitHub Actions
 - `.github/workflows/docker-image.yml` builds the Docker image for pushes and pull requests to `main`.
