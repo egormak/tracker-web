@@ -92,7 +92,7 @@ export default function App() {
       </Box>
 
       {/* Main content container */}
-      <Container sx={{ pt: { xs: 2, md: 3 }, pb: 6 }}>
+      <Container sx={{ pt: { xs: 2, md: 3 }, pb: 6, px: { xs: 1.5, sm: 3 } }}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/plan" element={<Plan />} />

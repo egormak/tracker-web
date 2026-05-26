@@ -287,46 +287,46 @@ export default function Timer() {
 
           <Stack spacing={4} alignItems="center">
             {/* Timer Display */}
-            <Typography variant="h1" sx={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '6rem', color: displayTimeStr.startsWith('-') ? 'error.main' : 'inherit' }}>
+            <Typography variant="h1" sx={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: { xs: '3.8rem', sm: '5.5rem', md: '6.5rem' }, color: displayTimeStr.startsWith('-') ? 'error.main' : 'inherit' }}>
               {displayTimeStr}
             </Typography>
 
             {isRunning ? (
               <Stack spacing={2} width="100%" alignItems="center">
-                <Typography variant="h5" color="text.secondary">
+                <Typography variant="h5" color="text.secondary" textAlign="center">
                   {runningTask.task_name} <Typography component="span" variant="body2" sx={{ color: 'text.disabled' }}>({runningTask.role})</Typography>
                   {runningTask.source_day && <Typography component="span" variant="body2" color="secondary"> [Rollover: {runningTask.source_day}]</Typography>}
                 </Typography>
 
-                <Stack direction="row" spacing={2}>
+                <Stack direction="row" spacing={2} width={{ xs: '100%', sm: 'auto' }}>
                   {runningTask.is_running ? (
-                    <Button variant="outlined" color="warning" size="large" onClick={handlePause} startIcon={<PauseRoundedIcon />}>
+                    <Button variant="outlined" color="warning" size="large" onClick={handlePause} startIcon={<PauseRoundedIcon />} sx={{ flex: 1 }}>
                       Pause
                     </Button>
                   ) : (
-                    <Button variant="contained" color="success" size="large" onClick={handleResume} startIcon={<PlayArrowRoundedIcon />}>
+                    <Button variant="contained" color="success" size="large" onClick={handleResume} startIcon={<PlayArrowRoundedIcon />} sx={{ flex: 1 }}>
                       Resume
                     </Button>
                   )}
-                  <Button variant="contained" color="error" size="large" onClick={() => handleStop(false)} startIcon={<StopRoundedIcon />}>
+                  <Button variant="contained" color="error" size="large" onClick={() => handleStop(false)} startIcon={<StopRoundedIcon />} sx={{ flex: 1 }}>
                     Stop
                   </Button>
                 </Stack>
               </Stack>
             ) : nextTaskInfo && sequenceMode !== 'none' ? (
                 <Stack spacing={2} width="100%" alignItems="center">
-                    <Typography variant="h5" color="primary">
+                    <Typography variant="h5" color="primary" textAlign="center">
                         Next Sequence Task: {nextTaskInfo.taskName} 
                         <Typography component="span" variant="body2" sx={{ ml: 1 }}>
                             ({nextTaskInfo.targetDuration} min)
                         </Typography>
                         {nextTaskInfo.sourceDay && <Typography component="span" variant="body2" color="secondary" sx={{ ml: 1 }}>[From: {nextTaskInfo.sourceDay}]</Typography>}
                     </Typography>
-                    <Stack direction="row" spacing={2}>
-                        <Button variant="contained" size="large" onClick={() => handleStart(undefined, nextTaskInfo)} startIcon={<PlayArrowRoundedIcon />}>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} width="100%">
+                        <Button variant="contained" size="large" fullWidth onClick={() => handleStart(undefined, nextTaskInfo)} startIcon={<PlayArrowRoundedIcon />}>
                             Start Gamified Task
                         </Button>
-                        <Button variant="outlined" size="large" color="secondary" onClick={fetchNextSequenceTask} startIcon={<SkipNextRoundedIcon />}>
+                        <Button variant="outlined" size="large" color="secondary" fullWidth onClick={fetchNextSequenceTask} startIcon={<SkipNextRoundedIcon />}>
                             Skip to Next
                         </Button>
                     </Stack>
@@ -351,12 +351,24 @@ export default function Timer() {
                     />
                   )}
                 />
-                <TextField select label="Role" value={role} onChange={(e) => setRole(e.target.value)} sx={{ minWidth: 120 }}>
+                <TextField 
+                  select 
+                  label="Role" 
+                  value={role} 
+                  onChange={(e) => setRole(e.target.value)} 
+                  sx={{ minWidth: 120, width: { xs: '100%', sm: 'auto' } }}
+                >
                   <MenuItem value="work">Work</MenuItem>
                   <MenuItem value="learn">Learn</MenuItem>
                   <MenuItem value="rest">Rest</MenuItem>
                 </TextField>
-                <Button variant="contained" type="submit" size="large" startIcon={<PlayArrowRoundedIcon />}>
+                <Button 
+                  variant="contained" 
+                  type="submit" 
+                  size="large" 
+                  startIcon={<PlayArrowRoundedIcon />}
+                  sx={{ width: { xs: '100%', sm: 'auto' } }}
+                >
                   Start
                 </Button>
               </Stack>

@@ -110,16 +110,16 @@ export default function PlanPercents() {
           </Box>
           
           <Grid container spacing={2}>
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={6} sm={6}>
               {renderPercentList('plan', 'Plan', percents.data.plan)}
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={6} sm={6}>
               {renderPercentList('work', 'Work', percents.data.work)}
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={6} sm={6}>
               {renderPercentList('learn', 'Learn', percents.data.learn)}
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={6} sm={6}>
               {renderPercentList('rest', 'Rest', percents.data.rest)}
             </Grid>
           </Grid>

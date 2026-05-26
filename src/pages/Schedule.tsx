@@ -218,13 +218,18 @@ export default function Schedule() {
   }
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box sx={{ p: { xs: 1.5, sm: 3 } }}>
       <Stack spacing={3}>
         {/* Header */}
-        <Stack direction="row" justifyContent="space-between" alignItems="center">
-          <Stack direction="row" spacing={2} alignItems="center">
-            <CalendarTodayIcon sx={{ fontSize: 32 }} />
-            <Typography variant="h4">Weekly Schedule</Typography>
+        <Stack 
+          direction={{ xs: 'column', sm: 'row' }} 
+          justifyContent="space-between" 
+          alignItems={{ xs: 'flex-start', sm: 'center' }}
+          spacing={2}
+        >
+          <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
+            <CalendarTodayIcon sx={{ fontSize: { xs: 24, sm: 32 } }} />
+            <Typography variant="h5" fontWeight={700}>Weekly Schedule</Typography>
             {schedule?.is_active && (
               <Chip
                 icon={<CheckCircleIcon />}
@@ -234,12 +239,13 @@ export default function Schedule() {
               />
             )}
           </Stack>
-          <Stack direction="row" spacing={2}>
+          <Stack direction="row" spacing={1} flexWrap="wrap" width={{ xs: '100%', sm: 'auto' }}>
             {!isEditing && schedule && (
               <Button
                 variant="outlined"
                 startIcon={<EditIcon />}
                 onClick={() => setIsEditing(true)}
+                sx={{ flex: { xs: 1, sm: 'initial' } }}
               >
                 Edit
               </Button>
@@ -249,12 +255,18 @@ export default function Schedule() {
                 variant="contained"
                 startIcon={<SaveIcon />}
                 onClick={handleSave}
+                sx={{ flex: { xs: 1, sm: 'initial' } }}
               >
-                Save Schedule
+                Save
               </Button>
             )}
             {schedule && (
-              <Button variant="contained" color="secondary" onClick={handleApply}>
+              <Button 
+                variant="contained" 
+                color="secondary" 
+                onClick={handleApply}
+                sx={{ flex: { xs: 1, sm: 'initial' } }}
+              >
                 Apply Today
               </Button>
             )}
@@ -281,20 +293,23 @@ export default function Schedule() {
                       borderRadius: 1,
                       display: 'flex',
                       justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 1.5,
                     }}
                   >
-                    <Box>
-                      <Typography variant="body1" fontWeight="bold">
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="body1" fontWeight="bold" noWrap>
                         {task.task_name}
                       </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        From {task.source_day} • Priority: {task.priority} • Role: {task.role}
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
+                        From {task.source_day} • Prio: {task.priority} • {task.role}
                       </Typography>
                     </Box>
                     <Chip
                       label={`${task.remaining_time} min left`}
                       size="small"
                       color="warning"
+                      sx={{ flexShrink: 0 }}
                     />
                   </Box>
                 ))}
@@ -315,7 +330,12 @@ export default function Schedule() {
           <CardContent>
             <Stack spacing={3}>
               {/* Day Header */}
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
+              <Stack 
+                direction={{ xs: 'column', sm: 'row' }} 
+                justifyContent="space-between" 
+                alignItems={{ xs: 'stretch', sm: 'center' }}
+                spacing={2}
+              >
                 <Typography variant="h6">{DAY_LABELS[currentDay]}</Typography>
                 {isEditing && (
                   <TextField
@@ -324,7 +344,7 @@ export default function Schedule() {
                     value={currentDaySchedule.total_time}
                     onChange={(e) => updateDayTotalTime(Number(e.target.value))}
                     size="small"
-                    sx={{ width: 200 }}
+                    sx={{ width: { xs: '100%', sm: 200 } }}
                   />
                 )}
               </Stack>
@@ -363,15 +383,16 @@ export default function Schedule() {
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
+                        gap: 2,
                       }}
                     >
-                      <Stack spacing={1} flex={1}>
-                        <Stack direction="row" spacing={2} alignItems="center">
-                          <Typography variant="body1" fontWeight="bold">
+                      <Stack spacing={1} flex={1} sx={{ minWidth: 0 }}>
+                        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 0.5 }}>
+                          <Typography variant="body1" fontWeight="bold" noWrap>
                             {task.name}
                           </Typography>
-                          <Chip label={task.role} size="small" />
-                          <Chip label={`Priority: ${task.priority}`} size="small" variant="outlined" />
+                          <Chip label={task.role} size="small" sx={{ height: 20, fontSize: '0.75rem' }} />
+                          <Chip label={`Priority: ${task.priority}`} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.75rem' }} />
                         </Stack>
                         <Typography variant="body2" color="text.secondary">
                           Time: {task.time} minutes
@@ -381,7 +402,7 @@ export default function Schedule() {
                         </Typography>
                       </Stack>
                       {isEditing && (
-                        <Stack direction="row" spacing={1}>
+                        <Stack direction="row" spacing={0.5} sx={{ flexShrink: 0 }}>
                           <IconButton size="small" onClick={() => handleEditTask(i)}>
                             <EditIcon />
                           </IconButton>

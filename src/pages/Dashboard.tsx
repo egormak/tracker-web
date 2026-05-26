@@ -89,7 +89,7 @@ export default function Dashboard() {
   ].filter(Boolean) as Array<{ label: string; value: string; icon: ReactNode; align?: 'flex-start' | 'flex-end' }>
 
   return (
-    <Grid container spacing={3} alignItems="stretch">
+    <Grid container spacing={{ xs: 2, md: 3 }} alignItems="stretch">
       <Grid item xs={12} md={6}>
         <Card title="Overview" subtitle="Today summary" icon={<TaskAltOutlinedIcon />}>
           {error && <Alert type="error">{error}</Alert>}
@@ -101,16 +101,15 @@ export default function Dashboard() {
             </Stack>
           ) : (
             <Stack spacing={3}>
-              <Grid container spacing={2}>
+              <Grid container spacing={{ xs: 1.5, sm: 2 }}>
                 {overviewItems.map((item) => {
-                  const textAlign = item.align === 'flex-end' ? 'right' : 'left'
                   return (
-                    <Grid item xs={12} sm={6} key={item.label}>
+                    <Grid item xs={6} sm={6} key={item.label}>
                       <Stack
                         spacing={1}
-                        alignItems={item.align || 'flex-start'}
+                        alignItems="flex-start"
                         sx={{
-                          p: 2.2,
+                          p: { xs: 1.8, sm: 2.2 },
                           borderRadius: 3,
                           background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.18), rgba(8, 20, 38, 0.4))',
                           border: '1px solid rgba(99, 102, 241, 0.22)',
@@ -118,19 +117,21 @@ export default function Dashboard() {
                       >
                         <Avatar
                           sx={{
-                            width: 38,
-                            height: 38,
+                            width: { xs: 32, sm: 38 },
+                            height: { xs: 32, sm: 38 },
                             bgcolor: 'rgba(99, 102, 241, 0.2)',
                             color: 'primary.main',
                           }}
                         >
                           {item.icon}
                         </Avatar>
-                        <Box textAlign={textAlign}>
-                          <Typography variant="overline" color="text.secondary" letterSpacing={0.6}>
+                        <Box textAlign="left">
+                          <Typography variant="overline" color="text.secondary" letterSpacing={0.6} sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}>
                             {item.label}
                           </Typography>
-                          <Typography variant="h5">{item.value}</Typography>
+                          <Typography variant="h6" sx={{ fontSize: { xs: '1.1rem', sm: '1.25rem' }, fontWeight: 700 }}>
+                            {item.value}
+                          </Typography>
                         </Box>
                       </Stack>
                     </Grid>
@@ -225,56 +226,73 @@ export default function Dashboard() {
                     key={t.name}
                     sx={{
                       mb: index === tasks.length - 1 ? 0 : 1.5,
+                      flexDirection: 'column',
                       alignItems: 'stretch',
-                      gap: 2,
+                      gap: 1.5,
+                      p: { xs: 1.5, sm: 2 },
                     }}
                   >
-                    <ListItemAvatar>
-                      <Avatar
-                        sx={{
-                          bgcolor: `rgba(99, 102, 241, ${0.16 + intensity * 0.3})`,
-                          color: 'primary.main',
-                        }}
-                      >
-                        {t.role.slice(0, 1).toUpperCase()}
-                      </Avatar>
-                    </ListItemAvatar>
-                    <ListItemText
-                      primary={
-                        <Typography variant="subtitle1" fontWeight={600}>
-                          {t.name}
-                        </Typography>
-                      }
-                      secondary={
-                        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                          <Chip
-                            size="small"
-                            label={`priority ${t.priority}`}
-                            variant="outlined"
-                            sx={{ borderColor: 'rgba(99, 102, 241, 0.42)' }}
-                          />
-                          <Typography variant="body2" color="text.secondary">
-                            role: {t.role}
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0, flex: 1 }}>
+                        <Avatar
+                          sx={{
+                            width: 38,
+                            height: 38,
+                            bgcolor: `rgba(99, 102, 241, ${0.16 + intensity * 0.3})`,
+                            color: 'primary.main',
+                            fontSize: '0.95rem',
+                            fontWeight: 700,
+                          }}
+                        >
+                          {t.role.slice(0, 1).toUpperCase()}
+                        </Avatar>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="subtitle1" fontWeight={600} noWrap sx={{ lineHeight: 1.2 }}>
+                            {t.name}
                           </Typography>
-                        </Stack>
-                      }
-                    />
-                    <Stack spacing={1} alignItems="flex-end" sx={{ minWidth: 220 }}>
-                      <Typography variant="subtitle1" fontWeight={600}>
-                        {t.time_done} / {t.time_duration} min
-                      </Typography>
-                      <Chip
-                        size="small"
-                        label={`${Math.round(pct)}% done`}
-                        color={pct >= 100 ? 'secondary' : 'default'}
-                        sx={{ bgcolor: 'rgba(99, 102, 241, 0.16)' }}
-                      />
-                      <Tooltip title={`${Math.round(pct)}% complete`} placement="top">
-                        <Box width="100%">
-                          <Progress value={pct} />
+                          <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5 }}>
+                            <Chip
+                              size="small"
+                              label={`priority ${t.priority}`}
+                              variant="outlined"
+                              sx={{ 
+                                borderColor: 'rgba(99, 102, 241, 0.3)', 
+                                height: 18, 
+                                fontSize: '0.65rem',
+                                '& .MuiChip-label': { px: 0.8 } 
+                              }}
+                            />
+                            <Typography variant="caption" color="text.secondary" noWrap>
+                              role: {t.role}
+                            </Typography>
+                          </Stack>
                         </Box>
-                      </Tooltip>
-                    </Stack>
+                      </Box>
+
+                      <Stack spacing={0.5} alignItems="flex-end" sx={{ flexShrink: 0 }}>
+                        <Typography variant="subtitle2" fontWeight={600} sx={{ lineHeight: 1.2 }}>
+                          {t.time_done} / {t.time_duration} min
+                        </Typography>
+                        <Chip
+                          size="small"
+                          label={`${Math.round(pct)}% done`}
+                          color={pct >= 100 ? 'secondary' : 'default'}
+                          sx={{ 
+                            bgcolor: pct >= 100 ? 'secondary.main' : 'rgba(99, 102, 241, 0.12)',
+                            color: pct >= 100 ? 'background.default' : 'text.primary',
+                            height: 18,
+                            fontSize: '0.65rem',
+                            '& .MuiChip-label': { px: 0.8, fontWeight: 600 }
+                          }}
+                        />
+                      </Stack>
+                    </Box>
+
+                    <Tooltip title={`${Math.round(pct)}% complete`} placement="top">
+                      <Box width="100%">
+                        <Progress value={pct} />
+                      </Box>
+                    </Tooltip>
                   </ListItem>
                 )
               })}
