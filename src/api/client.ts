@@ -4,9 +4,15 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 type HttpMethod = 'GET' | 'POST' | 'DELETE' | 'PUT'
 
 async function request<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  const initData = window.Telegram?.WebApp?.initData
+  if (initData) {
+    headers['X-Telegram-Init-Data'] = initData
+  }
+
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   })
   const text = await res.text()
