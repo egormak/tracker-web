@@ -79,6 +79,35 @@ export interface RecordsSummary {
   all: Record<string, number>
 }
 
+export interface WeeklyStatsDay {
+  day: string
+  date: string
+  total_done: number
+  roles: Record<string, number>
+  tasks: TaskResult[]
+}
+
+export interface WeeklyTarget {
+  role: string
+  time_duration: number
+  time_done: number
+}
+
+export interface WeeklyTaskTarget {
+  name: string
+  role: string
+  time_duration: number
+  time_done: number
+}
+
+export interface WeeklyStatsResponse {
+  week_start_date: string
+  week_end_date: string
+  days: WeeklyStatsDay[]
+  weekly_targets: WeeklyTarget[]
+  weekly_tasks: WeeklyTaskTarget[]
+}
+
 // Schedule types
 export interface ScheduleTask {
   name: string
@@ -176,6 +205,7 @@ export const api = {
   // Statistics
   getStatsDoneToday: () => request<TaskResult[]>('GET', '/api/v1/stats/done/today'),
   getStatsTasksToday: () => request<TaskResult[]>('GET', '/api/v1/stats/tasks/today'),
+  getWeeklyStats: () => request<WeeklyStatsResponse>('GET', '/api/v1/stats/weekly'),
   // Records summary
   getRecordsSummary: () => request<RecordsSummary>('GET', '/api/v1/records'),
   // Task list with planned vs done (today)
