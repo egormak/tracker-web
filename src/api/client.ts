@@ -262,8 +262,9 @@ export const api = {
 
   // Running Timer
   startTask: (payload: { task_name: string; role: string; target_duration?: number; source_day?: string }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/start', payload),
-  stopTask: () => request<{ status: string; data: TaskRecord }>('POST', '/api/v1/timer/run/stop'),
-  pauseTask: () => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/pause'),
-  resumeTask: () => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/resume'),
-  getTaskStatus: () => request<{ status: string; data: RunningTask }>('GET', '/api/v1/timer/run/status'),
+  stopTask: (payload?: { task_name?: string }) => request<{ status: string; data: TaskRecord }>('POST', '/api/v1/timer/run/stop', payload),
+  pauseTask: (payload?: { task_name?: string }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/pause', payload),
+  resumeTask: (payload?: { task_name?: string }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/resume', payload),
+  getTaskStatus: (task_name?: string) => request<{ status: string; data: RunningTask }>('GET', `/api/v1/timer/run/status${task_name ? `?task_name=${encodeURIComponent(task_name)}` : ''}`),
+  getRunningTasks: () => request<{ status: string; data: RunningTask[] }>('GET', '/api/v1/timer/run/list'),
 }

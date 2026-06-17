@@ -9,6 +9,8 @@ import Autocomplete from '@mui/material/Autocomplete'
 import Select from '@mui/material/Select'
 import InputLabel from '@mui/material/InputLabel'
 import FormControl from '@mui/material/FormControl'
+import Box from '@mui/material/Box'
+import Divider from '@mui/material/Divider'
 import AvTimerOutlinedIcon from '@mui/icons-material/AvTimerOutlined'
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
@@ -28,13 +30,151 @@ interface NextTaskInfo {
   percent?: number
 }
 
+interface TaskTimerItemProps {
+  task: RunningTask
+  onStop: (taskName: string, autoBlocked?: boolean) => void
+  onPause: (taskName: string) => void
+  onResume: (taskName: string) => void
+}
+
+function TaskTimerItem({ task, onStop, onPause, onResume }: TaskTimerItemProps) {
+  const [elapsed, setElapsed] = useState(0)
+
+  useEffect(() => {
+    let interval: number | undefined
+    if (task.is_running) {
+      const update = () => {
+        const start = new Date(task.start_time).getTime()
+        const now = new Date().getTime()
+        const currentSessionSeconds = Math.floor((now - start) / 1000)
+        setElapsed(task.accumulated * 60 + currentSessionSeconds)
+      }
+      update()
+      interval = window.setInterval(update, 1000)
+    } else {
+      setElapsed(task.accumulated * 60)
+    }
+    return () => window.clearInterval(interval)
+  }, [task])
+
+  // Auto-stop monitor
+  useEffect(() => {
+    if (task.is_running && task.target_duration && task.target_duration > 0) {
+      if (elapsed >= task.target_duration * 60) {
+        onStop(task.task_name, true)
+      }
+    }
+  }, [elapsed, task, onStop])
+
+  const formatTime = (totalSeconds: number) => {
+    const sign = totalSeconds < 0 ? '-' : ''
+    const abs = Math.abs(totalSeconds)
+    const h = Math.floor(abs / 3600)
+    const m = Math.floor((abs % 3600) / 60)
+    const s = abs % 60
+    return `${sign}${h > 0 ? h + ':' : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+  }
+
+  let displayTimeStr = formatTime(elapsed)
+  if (task.target_duration && task.target_duration > 0) {
+    const remainingSeconds = task.target_duration * 60 - elapsed
+    displayTimeStr = formatTime(remainingSeconds)
+  }
+
+  return (
+    <Box
+      sx={{
+        p: 2.5,
+        borderRadius: 2,
+        border: '1px solid',
+        borderColor: task.is_running ? 'primary.main' : 'divider',
+        backgroundColor: task.is_running ? 'action.hover' : 'background.paper',
+        boxShadow: task.is_running ? 1 : 0,
+        transition: 'all 0.2s ease-in-out',
+        '&:hover': {
+          boxShadow: 2,
+          borderColor: task.is_running ? 'primary.main' : 'text.disabled',
+        }
+      }}
+    >
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center" justifyContent="space-between">
+        <Box>
+          <Typography variant="h6" fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+            {task.task_name}
+            <Typography component="span" variant="body2" sx={{ color: 'text.secondary', fontWeight: 'normal' }}>
+              ({task.role})
+            </Typography>
+            {task.source_day && (
+              <Typography component="span" variant="caption" sx={{ px: 1, py: 0.2, borderRadius: 1, bgcolor: 'secondary.main', color: 'secondary.contrastText', fontWeight: 'bold' }}>
+                Rollover: {task.source_day}
+              </Typography>
+            )}
+          </Typography>
+          <Typography variant="body2" color={task.is_running ? 'success.main' : 'text.secondary'} sx={{ fontWeight: 'medium', mt: 0.5 }}>
+            Status: {task.is_running ? '● Running' : 'Paused'}
+          </Typography>
+        </Box>
+
+        <Stack direction="row" spacing={2} alignItems="center" sx={{ width: { xs: '100%', sm: 'auto' }, justifyContent: 'space-between' }}>
+          <Typography 
+            variant="h4" 
+            sx={{ 
+              fontFamily: 'monospace', 
+              fontWeight: 'bold', 
+              color: displayTimeStr.startsWith('-') ? 'error.main' : 'inherit',
+              minWidth: 100,
+              textAlign: 'right',
+              mr: 2,
+            }}
+          >
+            {displayTimeStr}
+          </Typography>
+
+          <Stack direction="row" spacing={1}>
+            {task.is_running ? (
+              <Button 
+                variant="outlined" 
+                color="warning" 
+                size="small"
+                onClick={() => onPause(task.task_name)} 
+                startIcon={<PauseRoundedIcon />}
+              >
+                Pause
+              </Button>
+            ) : (
+              <Button 
+                variant="contained" 
+                color="success" 
+                size="small"
+                onClick={() => onResume(task.task_name)} 
+                startIcon={<PlayArrowRoundedIcon />}
+              >
+                Resume
+              </Button>
+            )}
+
+            <Button 
+              variant="contained" 
+              color="error" 
+              size="small"
+              onClick={() => onStop(task.task_name)} 
+              startIcon={<StopRoundedIcon />}
+            >
+              Stop
+            </Button>
+          </Stack>
+        </Stack>
+      </Stack>
+    </Box>
+  )
+}
+
 export default function Timer() {
-  const [runningTask, setRunningTask] = useState<RunningTask | null>(null)
+  const [runningTasks, setRunningTasks] = useState<RunningTask[]>([])
   const [taskName, setTaskName] = useState('')
   const [role, setRole] = useState('work')
   const [msg, setMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [elapsed, setElapsed] = useState(0)
   const [availableTasks, setAvailableTasks] = useState<TaskResult[]>([])
 
   const [sequenceMode, setSequenceMode] = useState<SequenceMode>('none')
@@ -43,10 +183,7 @@ export default function Timer() {
 
   // Initialize audio
   useEffect(() => {
-    // A simple browser beep via Audio API or base64 data URI wouldn't hurt.
-    // We'll just define a base64 inline short pop/chime sound to avoid missing assets.
     const snd = new Audio('data:audio/mp3;base64,//NExAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq')
-    // Fallback if empty - we just rely on browser or it won't play. We'll add a proper beep using AudioContext later or try this.
     audioRef.current = snd
   }, [])
 
@@ -80,49 +217,25 @@ export default function Timer() {
     loadTasks()
   }, [])
 
-  // Timer tick
-  useEffect(() => {
-    let interval: number | undefined
-    if (runningTask && runningTask.is_running) {
-      interval = window.setInterval(() => {
-        const start = new Date(runningTask.start_time).getTime()
-        const now = new Date().getTime()
-        const currentSessionSeconds = Math.floor((now - start) / 1000)
-        setElapsed(runningTask.accumulated * 60 + currentSessionSeconds)
-      }, 1000)
-    } else if (runningTask && !runningTask.is_running) {
-      setElapsed(runningTask.accumulated * 60)
-    } else {
-      setElapsed(0)
-    }
-    return () => window.clearInterval(interval)
-  }, [runningTask])
-
-  // Auto-stop monitor
-  useEffect(() => {
-    if (runningTask && runningTask.is_running && runningTask.target_duration && runningTask.target_duration > 0) {
-      if (elapsed >= runningTask.target_duration * 60) {
-        // Target reached!
-        handleStop(true)
-      }
-    }
-  }, [elapsed, runningTask])
-
   const loadStatus = async () => {
     setError(null)
     try {
-      const r = await api.getTaskStatus()
-      if (r.data && r.data.task_name) {
-        setRunningTask(r.data)
+      const r = await api.getRunningTasks()
+      if (r.data) {
+        setRunningTasks(r.data)
       } else {
-        setRunningTask(null)
+        setRunningTasks([])
       }
     } catch (e: any) {
-      setRunningTask(null)
+      setRunningTasks([])
     }
   }
 
-  useEffect(() => { loadStatus() }, [])
+  useEffect(() => {
+    loadStatus()
+    const interval = window.setInterval(loadStatus, 5000)
+    return () => window.clearInterval(interval)
+  }, [])
 
   const handleStart = async (e?: React.FormEvent, forceTaskInfo?: NextTaskInfo) => {
     if (e) e.preventDefault()
@@ -136,49 +249,48 @@ export default function Timer() {
     if (!tName.trim()) { setError('Task name is required'); return }
     
     try {
-      const r = await api.startTask({ 
+      await api.startTask({ 
         task_name: tName, 
         role: tRole,
         target_duration: tTarget,
         source_day: tSource
       })
-      setRunningTask(r.data)
       setTaskName('')
       setNextTaskInfo(null)
+      loadStatus()
     } catch (e: any) { setError(e.message) }
   }
 
-  const handleStop = async (autoBlocked: boolean = false) => {
+  const handleStop = async (tName: string, autoBlocked: boolean = false) => {
     setMsg(null); setError(null)
     try {
-      await api.stopTask()
-      setRunningTask(null)
-      setElapsed(0)
+      await api.stopTask({ task_name: tName })
+      loadStatus()
       if (autoBlocked) {
         playBeep()
-        setMsg('Timer finished and saved!')
+        setMsg(`Timer finished and saved for '${tName}'!`)
         if (sequenceMode !== 'none') {
           fetchNextSequenceTask()
         }
       } else {
-        setMsg('Task stopped and saved')
+        setMsg(`Task '${tName}' stopped and saved`)
       }
     } catch (e: any) { setError(e.message) }
   }
 
-  const handlePause = async () => {
+  const handlePause = async (tName: string) => {
     setError(null)
     try {
-      const r = await api.pauseTask()
-      setRunningTask(r.data)
+      await api.pauseTask({ task_name: tName })
+      loadStatus()
     } catch (e: any) { setError(e.message) }
   }
 
-  const handleResume = async () => {
+  const handleResume = async (tName: string) => {
     setError(null)
     try {
-      const r = await api.resumeTask()
-      setRunningTask(r.data)
+      await api.resumeTask({ task_name: tName })
+      loadStatus()
     } catch (e: any) { setError(e.message) }
   }
 
@@ -237,144 +349,124 @@ export default function Timer() {
 
   // Fetch sequence when mode changes to something active
   useEffect(() => {
-    if (sequenceMode !== 'none' && !runningTask && !nextTaskInfo) {
+    if (sequenceMode !== 'none' && runningTasks.length === 0 && !nextTaskInfo) {
         fetchNextSequenceTask()
     }
     if (sequenceMode === 'none') {
         setNextTaskInfo(null)
     }
-  }, [sequenceMode])
-
-  const formatTime = (totalSeconds: number) => {
-    const sign = totalSeconds < 0 ? '-' : ''
-    const abs = Math.abs(totalSeconds)
-    const h = Math.floor(abs / 3600)
-    const m = Math.floor((abs % 3600) / 60)
-    const s = abs % 60
-    return `${sign}${h > 0 ? h + ':' : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
-  }
-
-  const isRunning = runningTask !== null
-
-  let displayTimeStr = formatTime(elapsed)
-  // Target duration formatting
-  if (runningTask && runningTask.target_duration && runningTask.target_duration > 0) {
-      const remainingSeconds = runningTask.target_duration * 60 - elapsed
-      displayTimeStr = formatTime(remainingSeconds)
-  }
+  }, [sequenceMode, runningTasks])
 
   return (
     <Grid container spacing={3}>
-      <Grid item xs={12} md={8}>
-        <Card title="Running Task" subtitle="Track your time" icon={<AvTimerOutlinedIcon />}>
-            <Stack direction="row" justifyContent="flex-end" mb={2}>
-              <FormControl size="small" sx={{ minWidth: 200 }}>
-                <InputLabel>Sequence Mode</InputLabel>
-                <Select
-                  label="Sequence Mode"
-                  value={sequenceMode}
-                  onChange={(e) => setSequenceMode(e.target.value as SequenceMode)}
-                >
-                  <MenuItem value="none">Manual Focus</MenuItem>
-                  <MenuItem value="percent">Gamified Plan (Percent)</MenuItem>
-                  <MenuItem value="backlog">Gamified Backlog</MenuItem>
-                </Select>
-              </FormControl>
-            </Stack>
+      <Grid item xs={12} md={9}>
+        <Card title="Active Timers" subtitle="Track your active and paused tasks" icon={<AvTimerOutlinedIcon />}>
+          <Stack direction="row" justifyContent="flex-end" mb={2}>
+            <FormControl size="small" sx={{ minWidth: 200 }}>
+              <InputLabel>Sequence Mode</InputLabel>
+              <Select
+                label="Sequence Mode"
+                value={sequenceMode}
+                onChange={(e) => setSequenceMode(e.target.value as SequenceMode)}
+              >
+                <MenuItem value="none">Manual Focus</MenuItem>
+                <MenuItem value="percent">Gamified Plan (Percent)</MenuItem>
+                <MenuItem value="backlog">Gamified Backlog</MenuItem>
+              </Select>
+            </FormControl>
+          </Stack>
 
           {error && <Alert type="error">{error}</Alert>}
           {msg && <Alert type="success">{msg}</Alert>}
 
-          <Stack spacing={4} alignItems="center">
-            {/* Timer Display */}
-            <Typography variant="h1" sx={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: { xs: '3.8rem', sm: '5.5rem', md: '6.5rem' }, color: displayTimeStr.startsWith('-') ? 'error.main' : 'inherit' }}>
-              {displayTimeStr}
-            </Typography>
-
-            {isRunning ? (
-              <Stack spacing={2} width="100%" alignItems="center">
-                <Typography variant="h5" color="text.secondary" textAlign="center">
-                  {runningTask.task_name} <Typography component="span" variant="body2" sx={{ color: 'text.disabled' }}>({runningTask.role})</Typography>
-                  {runningTask.source_day && <Typography component="span" variant="body2" color="secondary"> [Rollover: {runningTask.source_day}]</Typography>}
-                </Typography>
-
-                <Stack direction="row" spacing={2} width={{ xs: '100%', sm: 'auto' }}>
-                  {runningTask.is_running ? (
-                    <Button variant="outlined" color="warning" size="large" onClick={handlePause} startIcon={<PauseRoundedIcon />} sx={{ flex: 1 }}>
-                      Pause
-                    </Button>
-                  ) : (
-                    <Button variant="contained" color="success" size="large" onClick={handleResume} startIcon={<PlayArrowRoundedIcon />} sx={{ flex: 1 }}>
-                      Resume
-                    </Button>
-                  )}
-                  <Button variant="contained" color="error" size="large" onClick={() => handleStop(false)} startIcon={<StopRoundedIcon />} sx={{ flex: 1 }}>
-                    Stop
-                  </Button>
-                </Stack>
-              </Stack>
-            ) : nextTaskInfo && sequenceMode !== 'none' ? (
-                <Stack spacing={2} width="100%" alignItems="center">
-                    <Typography variant="h5" color="primary" textAlign="center">
-                        Next Sequence Task: {nextTaskInfo.taskName} 
-                        <Typography component="span" variant="body2" sx={{ ml: 1 }}>
-                            ({nextTaskInfo.targetDuration} min)
-                        </Typography>
-                        {nextTaskInfo.sourceDay && <Typography component="span" variant="body2" color="secondary" sx={{ ml: 1 }}>[From: {nextTaskInfo.sourceDay}]</Typography>}
-                    </Typography>
-                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} width="100%">
-                        <Button variant="contained" size="large" fullWidth onClick={() => handleStart(undefined, nextTaskInfo)} startIcon={<PlayArrowRoundedIcon />}>
-                            Start Gamified Task
-                        </Button>
-                        <Button variant="outlined" size="large" color="secondary" fullWidth onClick={fetchNextSequenceTask} startIcon={<SkipNextRoundedIcon />}>
-                            Skip to Next
-                        </Button>
-                    </Stack>
-                </Stack>
-            ) : (
-              <Stack component="form" onSubmit={handleStart} spacing={2} width="100%" direction={{ xs: 'column', sm: 'row' }}>
-                <Autocomplete
-                  options={availableTasks.map(t => t.name)}
-                  value={taskName}
-                  onChange={(_, newValue) => {
-                      setTaskName(newValue || '')
-                      const f = availableTasks.find(t=>t.name===newValue)
-                      if(f) setRole(f.role)
-                  }}
-                  freeSolo={false}
-                  fullWidth
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="Task Name"
-                      required
-                    />
-                  )}
+          <Stack spacing={2} sx={{ mb: 4 }}>
+            {runningTasks.length > 0 ? (
+              runningTasks.map((task) => (
+                <TaskTimerItem
+                  key={task.task_name}
+                  task={task}
+                  onStop={handleStop}
+                  onPause={handlePause}
+                  onResume={handleResume}
                 />
-                <TextField 
-                  select 
-                  label="Role" 
-                  value={role} 
-                  onChange={(e) => setRole(e.target.value)} 
-                  sx={{ minWidth: 120, width: { xs: '100%', sm: 'auto' } }}
-                >
-                  <MenuItem value="work">Work</MenuItem>
-                  <MenuItem value="learn">Learn</MenuItem>
-                  <MenuItem value="rest">Rest</MenuItem>
-                </TextField>
-                <Button 
-                  variant="contained" 
-                  type="submit" 
-                  size="large" 
-                  startIcon={<PlayArrowRoundedIcon />}
-                  sx={{ width: { xs: '100%', sm: 'auto' } }}
-                >
-                  Start
+              ))
+            ) : (
+              <Typography variant="body1" color="text.secondary" textAlign="center" py={4}>
+                No tasks are currently active. Start a task below.
+              </Typography>
+            )}
+          </Stack>
+
+          <Divider sx={{ my: 4 }} />
+
+          <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ mb: 2 }}>
+            Start a Task
+          </Typography>
+
+          {nextTaskInfo && sequenceMode !== 'none' ? (
+            <Stack spacing={2} width="100%" alignItems="center" sx={{ p: 2, bgcolor: 'action.hover', borderRadius: 2 }}>
+              <Typography variant="h6" color="primary" textAlign="center">
+                Next Sequence Task: <strong>{nextTaskInfo.taskName}</strong>
+                <Typography component="span" variant="body2" sx={{ ml: 1, color: 'text.secondary' }}>
+                  ({nextTaskInfo.targetDuration} min)
+                </Typography>
+                {nextTaskInfo.sourceDay && (
+                  <Typography component="span" variant="body2" color="secondary" sx={{ ml: 1 }}>
+                    [From: {nextTaskInfo.sourceDay}]
+                  </Typography>
+                )}
+              </Typography>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} width="100%">
+                <Button variant="contained" size="large" fullWidth onClick={() => handleStart(undefined, nextTaskInfo)} startIcon={<PlayArrowRoundedIcon />}>
+                  Start Gamified Task
+                </Button>
+                <Button variant="outlined" size="large" color="secondary" fullWidth onClick={fetchNextSequenceTask} startIcon={<SkipNextRoundedIcon />}>
+                  Skip to Next
                 </Button>
               </Stack>
-            )}
-
-          </Stack>
+            </Stack>
+          ) : (
+            <Stack component="form" onSubmit={handleStart} spacing={2} width="100%" direction={{ xs: 'column', sm: 'row' }} alignItems="center">
+              <Autocomplete
+                options={availableTasks.map(t => t.name)}
+                value={taskName}
+                onChange={(_, newValue) => {
+                    setTaskName(newValue || '')
+                    const f = availableTasks.find(t=>t.name===newValue)
+                    if(f) setRole(f.role)
+                }}
+                freeSolo={true}
+                fullWidth
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Task Name"
+                    required
+                  />
+                )}
+              />
+              <TextField 
+                select 
+                label="Role" 
+                value={role} 
+                onChange={(e) => setRole(e.target.value)} 
+                sx={{ minWidth: 140, width: { xs: '100%', sm: 'auto' } }}
+              >
+                <MenuItem value="work">Work</MenuItem>
+                <MenuItem value="learn">Learn</MenuItem>
+                <MenuItem value="rest">Rest</MenuItem>
+              </TextField>
+              <Button 
+                variant="contained" 
+                type="submit" 
+                size="large" 
+                startIcon={<PlayArrowRoundedIcon />}
+                sx={{ py: 1.8, minWidth: 120, width: { xs: '100%', sm: 'auto' } }}
+              >
+                Start
+              </Button>
+            </Stack>
+          )}
         </Card>
       </Grid>
     </Grid>
