@@ -39,6 +39,7 @@ interface TaskTimerItemProps {
 
 function TaskTimerItem({ task, onStop, onPause, onResume }: TaskTimerItemProps) {
   const [elapsed, setElapsed] = useState(0)
+  const autoStoppedRef = useRef(false)
 
   useEffect(() => {
     let interval: number | undefined
@@ -57,10 +58,18 @@ function TaskTimerItem({ task, onStop, onPause, onResume }: TaskTimerItemProps) 
     return () => window.clearInterval(interval)
   }, [task])
 
-  // Auto-stop monitor
+  // Reset the auto-stop guard whenever this timer session stops being active
+  useEffect(() => {
+    if (!task.is_running) autoStoppedRef.current = false
+  }, [task.is_running])
+
+  // Auto-stop monitor. Guarded by a ref so an unrelated re-render (which
+  // creates a new `onStop` reference) can't trigger a second stop call
+  // while the first stop+refresh round trip is still in flight.
   useEffect(() => {
     if (task.is_running && task.target_duration && task.target_duration > 0) {
-      if (elapsed >= task.target_duration * 60) {
+      if (elapsed >= task.target_duration * 60 && !autoStoppedRef.current) {
+        autoStoppedRef.current = true
         onStop(task.task_name, true)
       }
     }
@@ -218,16 +227,14 @@ export default function Timer() {
   }, [])
 
   const loadStatus = async () => {
-    setError(null)
     try {
       const r = await api.getRunningTasks()
-      if (r.data) {
-        setRunningTasks(r.data)
-      } else {
-        setRunningTasks([])
-      }
+      setRunningTasks(r.data || [])
+      setError(null)
     } catch (e: any) {
-      setRunningTasks([])
+      // Keep the last known list on a transient poll failure instead of
+      // wiping active timers from the screen; just surface the error.
+      setError(e.message || 'Failed to refresh running tasks')
     }
   }
 
@@ -240,24 +247,38 @@ export default function Timer() {
   const handleStart = async (e?: React.FormEvent, forceTaskInfo?: NextTaskInfo) => {
     if (e) e.preventDefault()
     setMsg(null); setError(null)
-    
+
     let tName = forceTaskInfo ? forceTaskInfo.taskName : taskName
     let tRole = forceTaskInfo ? forceTaskInfo.role : role
     let tTarget = forceTaskInfo ? forceTaskInfo.targetDuration : undefined
     let tSource = forceTaskInfo ? forceTaskInfo.sourceDay : undefined
 
-    if (!tName.trim()) { setError('Task name is required'); return }
-    
+    tName = tName.trim()
+    if (!tName) { setError('Task name is required'); return }
+
+    // Free-typed names may be a typo of an existing task (extra space,
+    // different casing) - snap to the real task's name/role instead of
+    // silently starting a separate, fragmented task bucket.
+    if (!forceTaskInfo) {
+      const match = availableTasks.find(t => t.name.trim().toLowerCase() === tName.toLowerCase())
+      if (match) { tName = match.name; tRole = match.role }
+    }
+
+    if (runningTasks.some(t => t.task_name.toLowerCase() === tName.toLowerCase())) {
+      setError(`Task '${tName}' is already active`)
+      return
+    }
+
     try {
-      await api.startTask({ 
-        task_name: tName, 
+      const r = await api.startTask({
+        task_name: tName,
         role: tRole,
         target_duration: tTarget,
         source_day: tSource
       })
+      setRunningTasks(prev => [...prev.filter(t => t.task_name !== tName), r.data])
       setTaskName('')
       setNextTaskInfo(null)
-      loadStatus()
     } catch (e: any) { setError(e.message) }
   }
 
@@ -265,13 +286,10 @@ export default function Timer() {
     setMsg(null); setError(null)
     try {
       await api.stopTask({ task_name: tName })
-      loadStatus()
+      setRunningTasks(prev => prev.filter(t => t.task_name !== tName))
       if (autoBlocked) {
         playBeep()
         setMsg(`Timer finished and saved for '${tName}'!`)
-        if (sequenceMode !== 'none') {
-          fetchNextSequenceTask()
-        }
       } else {
         setMsg(`Task '${tName}' stopped and saved`)
       }
@@ -281,20 +299,23 @@ export default function Timer() {
   const handlePause = async (tName: string) => {
     setError(null)
     try {
-      await api.pauseTask({ task_name: tName })
-      loadStatus()
+      const r = await api.pauseTask({ task_name: tName })
+      setRunningTasks(prev => prev.map(t => t.task_name === tName ? r.data : t))
     } catch (e: any) { setError(e.message) }
   }
 
   const handleResume = async (tName: string) => {
     setError(null)
     try {
-      await api.resumeTask({ task_name: tName })
-      loadStatus()
+      const r = await api.resumeTask({ task_name: tName })
+      setRunningTasks(prev => prev.map(t => t.task_name === tName ? r.data : t))
     } catch (e: any) { setError(e.message) }
   }
 
+  const fetchingNextRef = useRef(false)
   const fetchNextSequenceTask = async () => {
+    if (fetchingNextRef.current) return
+    fetchingNextRef.current = true
     setMsg(null); setError(null)
     try {
       let tName = ''
@@ -344,6 +365,8 @@ export default function Timer() {
     } catch (e: any) {
         setError(e.message)
         setSequenceMode('none')
+    } finally {
+        fetchingNextRef.current = false
     }
   }
 
@@ -383,7 +406,7 @@ export default function Timer() {
             {runningTasks.length > 0 ? (
               runningTasks.map((task) => (
                 <TaskTimerItem
-                  key={task.task_name}
+                  key={task.id || `${task.task_name}-${task.start_time}`}
                   task={task}
                   onStop={handleStop}
                   onPause={handlePause}
