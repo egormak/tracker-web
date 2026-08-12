@@ -29,6 +29,7 @@ import { api, RestTimeResponse, RecordsSummary, TaskResult, WeeklyStatsResponse 
 import Alert from '../components/Alert'
 import Card from '../components/Card'
 import Progress from '../components/Progress'
+import { EveningFocusCard } from '../components/EveningFocusCard'
 import { formatRestMinutes } from '../utils/format'
 
 export default function Dashboard() {
@@ -151,8 +152,10 @@ export default function Dashboard() {
   ].filter(Boolean) as Array<{ label: string; value: string; icon: ReactNode; align?: 'flex-start' | 'flex-end' }>
 
   return (
-    <Grid container spacing={{ xs: 2, md: 3 }} alignItems="stretch">
-      <Grid item xs={12} md={6}>
+    <Box sx={{ width: '100%' }}>
+      <EveningFocusCard />
+      <Grid container spacing={{ xs: 2, md: 3 }} alignItems="stretch">
+        <Grid item xs={12} md={6}>
         <Card title="Overview" subtitle="Today summary" icon={<TaskAltOutlinedIcon />}>
           {error && <Alert type="error">{error}</Alert>}
           {loading ? (
@@ -739,5 +742,6 @@ export default function Dashboard() {
         </Card>
       </Grid>
     </Grid>
+    </Box>
   )
 }

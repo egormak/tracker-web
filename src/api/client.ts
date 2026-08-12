@@ -266,4 +266,26 @@ export const api = {
   pauseTask: (payload?: { task_name?: string }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/pause', payload),
   resumeTask: (payload?: { task_name?: string }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/resume', payload),
   getRunningTasks: () => request<{ status: string; data: RunningTask[] }>('GET', '/api/v1/timer/run/list'),
+
+  // Evening Focus Mode
+  getEveningFocus: (category?: string, time?: number) =>
+    request<{ status: string; data: EveningFocusResponse }>('GET', `/api/v1/mode/evening-focus?${category ? `category=${encodeURIComponent(category)}&` : ''}${time ? `time=${time}` : ''}`),
+  skipEveningFocus: (taskName: string, category?: string, time?: number) =>
+    request<{ status: string; data: EveningFocusResponse }>('POST', `/api/v1/mode/evening-focus/skip?${category ? `category=${encodeURIComponent(category)}&` : ''}${time ? `time=${time}` : ''}`, { task_name: taskName }),
 }
+
+export interface EveningFocusCandidate {
+  task_name: string
+  role: string
+  weekly_gap: number
+  priority: number
+  is_strict: boolean
+}
+
+export interface EveningFocusResponse {
+  current_task: EveningFocusCandidate
+  candidates: EveningFocusCandidate[]
+  sprint_time: number
+  rest_pool: number
+}
+
