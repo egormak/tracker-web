@@ -23,6 +23,7 @@ import Manage from './pages/Manage'
 import Timer from './pages/Timer'
 import Schedule from './pages/Schedule'
 import Header from './components/Header'
+import { DESIGN_TOKENS, ROLE_COLORS } from './constants/themeColors'
 
 // Icons
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined'
@@ -71,21 +72,45 @@ export default function App() {
     const path = location.pathname
     if (path === '/') return 0
     if (path === '/timer') return 1
-    if (path === '/rest') return 2
-    if (path === '/schedule') return 3
-    return -1 // Other paths show in drawer, do not highlight bottom bar
+    if (path === '/schedule') return 2
+    if (path === '/rest') return 3
+    return -1
   }
 
   const handleNavChange = (_event: React.SyntheticEvent, newValue: number) => {
     if (newValue === 0) navigate('/')
     else if (newValue === 1) navigate('/timer')
-    else if (newValue === 2) navigate('/rest')
-    else if (newValue === 3) navigate('/schedule')
+    else if (newValue === 2) navigate('/schedule')
+    else if (newValue === 3) navigate('/rest')
     else if (newValue === 4) setDrawerOpen(true)
   }
 
+  // Dynamic ambient glow depending on page/route
+  const getAmbientGlowBackground = () => {
+    if (location.pathname === '/timer') {
+      return 'radial-gradient(circle at 50% 10%, rgba(255, 107, 74, 0.12), transparent 50%), radial-gradient(circle at 80% 90%, rgba(59, 130, 246, 0.08), transparent 40%), #0B0F17'
+    }
+    if (location.pathname === '/rest') {
+      return 'radial-gradient(circle at 50% 10%, rgba(16, 185, 129, 0.12), transparent 50%), #0B0F17'
+    }
+    if (location.pathname === '/schedule' || location.pathname === '/plan') {
+      return 'radial-gradient(circle at 50% 10%, rgba(59, 130, 246, 0.12), transparent 50%), #0B0F17'
+    }
+    // Default dashboard
+    return 'radial-gradient(circle at 20% 15%, rgba(255, 107, 74, 0.09), transparent 45%), radial-gradient(circle at 80% 10%, rgba(59, 130, 246, 0.08), transparent 45%), #0B0F17'
+  }
+
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', color: 'text.primary', pb: { xs: 8, md: 0 } }}>
+    <Box
+      sx={{
+        minHeight: '100vh',
+        backgroundColor: DESIGN_TOKENS.bgMain,
+        backgroundImage: getAmbientGlowBackground(),
+        transition: 'background 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
+        color: DESIGN_TOKENS.textPrimary,
+        pb: { xs: 8, md: 0 },
+      }}
+    >
       {/* Top Header shown only on Desktop */}
       <Box sx={{ display: { xs: 'none', md: 'block' } }}>
         <Header />
@@ -105,31 +130,42 @@ export default function App() {
       </Container>
 
       {/* Bottom Navigation for Mobile / Telegram */}
-      <Paper 
-        elevation={4} 
-        sx={{ 
-          position: 'fixed', 
-          bottom: 0, 
-          left: 0, 
-          right: 0, 
+      <Paper
+        elevation={0}
+        sx={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
           display: { xs: 'block', md: 'none' },
           zIndex: 1100,
-          borderTop: '1px solid rgba(148, 163, 184, 0.12)',
-          backgroundImage: 'linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.92))',
-          backdropFilter: 'blur(20px)'
+          borderTop: `1px solid ${DESIGN_TOKENS.borderColor}`,
+          backgroundColor: 'rgba(11, 15, 23, 0.88)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
         }}
       >
         <BottomNavigation
           showLabels
           value={getNavValue()}
           onChange={handleNavChange}
-          sx={{ bgcolor: 'transparent' }}
+          sx={{
+            bgcolor: 'transparent',
+            '& .Mui-selected': {
+              color: `${ROLE_COLORS.work} !important`,
+              fontWeight: 700,
+            },
+            '& .MuiBottomNavigationAction-root': {
+              color: DESIGN_TOKENS.textMuted,
+              minWidth: 0,
+            },
+          }}
         >
-          <BottomNavigationAction label="Home" icon={<DashboardOutlinedIcon />} />
-          <BottomNavigationAction label="Timer" icon={<TimelapseOutlinedIcon />} />
-          <BottomNavigationAction label="Rest" icon={<LocalHotelOutlinedIcon />} />
-          <BottomNavigationAction label="Schedule" icon={<CalendarTodayIcon />} />
-          <BottomNavigationAction label="More" icon={<MenuRoundedIcon />} />
+          <BottomNavigationAction label="Главная" icon={<DashboardOutlinedIcon />} />
+          <BottomNavigationAction label="Таймер" icon={<TimelapseOutlinedIcon />} />
+          <BottomNavigationAction label="График" icon={<CalendarTodayIcon />} />
+          <BottomNavigationAction label="Отдых" icon={<LocalHotelOutlinedIcon />} />
+          <BottomNavigationAction label="Меню" icon={<MenuRoundedIcon />} />
         </BottomNavigation>
       </Paper>
 
@@ -142,51 +178,61 @@ export default function App() {
           sx: {
             borderTopLeftRadius: 20,
             borderTopRightRadius: 20,
-            backgroundImage: 'linear-gradient(180deg, rgba(17, 24, 39, 0.98) 0%, rgba(15, 23, 42, 0.96) 100%)',
+            backgroundColor: 'rgba(15, 23, 42, 0.95)',
             backdropFilter: 'blur(25px)',
-            border: '1px solid rgba(148, 163, 184, 0.14)',
+            WebkitBackdropFilter: 'blur(25px)',
+            border: `1px solid ${DESIGN_TOKENS.borderColor}`,
             pb: 2,
-            px: 2
-          }
+            px: 2,
+          },
         }}
       >
         <Box sx={{ width: 'auto', pt: 2 }}>
-          <Typography variant="subtitle1" sx={{ px: 2, pb: 1, fontWeight: 700, color: 'text.secondary' }}>
-            More Actions
+          <Typography variant="subtitle1" sx={{ px: 2, pb: 1, fontWeight: 700, color: DESIGN_TOKENS.textSecondary }}>
+            Дополнительные разделы
           </Typography>
-          <Divider sx={{ mb: 1 }} />
+          <Divider sx={{ mb: 1, borderColor: DESIGN_TOKENS.borderColor }} />
           <List>
             <ListItem disablePadding>
-              <ListItemButton 
-                onClick={() => { setDrawerOpen(false); navigate('/plan'); }}
+              <ListItemButton
+                onClick={() => {
+                  setDrawerOpen(false)
+                  navigate('/plan')
+                }}
                 sx={{ borderRadius: 2 }}
               >
-                <ListItemIcon sx={{ color: 'primary.main' }}>
+                <ListItemIcon sx={{ color: ROLE_COLORS.learn }}>
                   <PlaylistAddCheckRoundedIcon />
                 </ListItemIcon>
-                <ListItemText primary="Plan Percents" />
+                <ListItemText primary="Проценты плана (Plan Percents)" />
               </ListItemButton>
             </ListItem>
             <ListItem disablePadding>
-              <ListItemButton 
-                onClick={() => { setDrawerOpen(false); navigate('/record'); }}
+              <ListItemButton
+                onClick={() => {
+                  setDrawerOpen(false)
+                  navigate('/record')
+                }}
                 sx={{ borderRadius: 2 }}
               >
-                <ListItemIcon sx={{ color: 'primary.main' }}>
+                <ListItemIcon sx={{ color: ROLE_COLORS.work }}>
                   <AssignmentTurnedInOutlinedIcon />
                 </ListItemIcon>
-                <ListItemText primary="Record Work" />
+                <ListItemText primary="Ручная запись (Record Work)" />
               </ListItemButton>
             </ListItem>
             <ListItem disablePadding>
-              <ListItemButton 
-                onClick={() => { setDrawerOpen(false); navigate('/manage'); }}
+              <ListItemButton
+                onClick={() => {
+                  setDrawerOpen(false)
+                  navigate('/manage')
+                }}
                 sx={{ borderRadius: 2 }}
               >
-                <ListItemIcon sx={{ color: 'primary.main' }}>
+                <ListItemIcon sx={{ color: ROLE_COLORS.rest }}>
                   <ManageAccountsRoundedIcon />
                 </ListItemIcon>
-                <ListItemText primary="Manage Settings" />
+                <ListItemText primary="Управление и настройки (Manage)" />
               </ListItemButton>
             </ListItem>
           </List>
@@ -195,4 +241,3 @@ export default function App() {
     </Box>
   )
 }
-

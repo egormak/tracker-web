@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import Button from '@mui/material/Button'
 import Grid from '@mui/material/Grid'
 import Stack from '@mui/material/Stack'
@@ -11,16 +11,26 @@ import InputLabel from '@mui/material/InputLabel'
 import FormControl from '@mui/material/FormControl'
 import Box from '@mui/material/Box'
 import Divider from '@mui/material/Divider'
+import Chip from '@mui/material/Chip'
 import AvTimerOutlinedIcon from '@mui/icons-material/AvTimerOutlined'
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
 import StopRoundedIcon from '@mui/icons-material/StopRounded'
 import SkipNextRoundedIcon from '@mui/icons-material/SkipNextRounded'
+import FlashOnRoundedIcon from '@mui/icons-material/FlashOnRounded'
+import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
+
 import { api, RunningTask, TaskResult } from '../api/client'
 import Alert from '../components/Alert'
 import Card from '../components/Card'
+import { CircularTimerCanvas } from '../components/canvas/CircularTimerCanvas'
+import { soundSynth } from '../utils/audio'
+import { useHotkeys } from '../hooks/useHotkeys'
+import { ROLE_THEMES, ROLE_TAGS, TIMER_PRESETS, DESIGN_TOKENS } from '../constants/themeColors'
 
 type SequenceMode = 'none' | 'percent' | 'backlog'
+type TimerMode = 'pomodoro' | 'free'
 
 interface NextTaskInfo {
   taskName: string
@@ -35,9 +45,10 @@ interface TaskTimerItemProps {
   onStop: (taskName: string, autoBlocked?: boolean) => void
   onPause: (taskName: string) => void
   onResume: (taskName: string) => void
+  onAdjustDuration?: (deltaMin: number) => void
 }
 
-function TaskTimerItem({ task, onStop, onPause, onResume }: TaskTimerItemProps) {
+function TaskTimerItem({ task, onStop, onPause, onResume, onAdjustDuration }: TaskTimerItemProps) {
   const [elapsed, setElapsed] = useState(0)
   const autoStoppedRef = useRef(false)
 
@@ -63,9 +74,7 @@ function TaskTimerItem({ task, onStop, onPause, onResume }: TaskTimerItemProps) 
     if (!task.is_running) autoStoppedRef.current = false
   }, [task.is_running])
 
-  // Auto-stop monitor. Guarded by a ref so an unrelated re-render (which
-  // creates a new `onStop` reference) can't trigger a second stop call
-  // while the first stop+refresh round trip is still in flight.
+  // Auto-stop monitor
   useEffect(() => {
     if (task.is_running && task.target_duration && task.target_duration > 0) {
       if (elapsed >= task.target_duration * 60 && !autoStoppedRef.current) {
@@ -75,101 +84,183 @@ function TaskTimerItem({ task, onStop, onPause, onResume }: TaskTimerItemProps) 
     }
   }, [elapsed, task, onStop])
 
-  const formatTime = (totalSeconds: number) => {
-    const sign = totalSeconds < 0 ? '-' : ''
-    const abs = Math.abs(totalSeconds)
-    const h = Math.floor(abs / 3600)
-    const m = Math.floor((abs % 3600) / 60)
-    const s = abs % 60
-    return `${sign}${h > 0 ? h + ':' : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
-  }
-
-  let displayTimeStr = formatTime(elapsed)
-  if (task.target_duration && task.target_duration > 0) {
-    const remainingSeconds = task.target_duration * 60 - elapsed
-    displayTimeStr = formatTime(remainingSeconds)
-  }
+  const theme = ROLE_THEMES[task.role] || ROLE_THEMES.work
+  const targetSeconds = (task.target_duration || 0) * 60
 
   return (
     <Box
       sx={{
-        p: 2.5,
-        borderRadius: 2,
+        p: { xs: 2.5, sm: 3.5 },
+        borderRadius: 3.5,
         border: '1px solid',
-        borderColor: task.is_running ? 'primary.main' : 'divider',
-        backgroundColor: task.is_running ? 'action.hover' : 'background.paper',
-        boxShadow: task.is_running ? 1 : 0,
-        transition: 'all 0.2s ease-in-out',
-        '&:hover': {
-          boxShadow: 2,
-          borderColor: task.is_running ? 'primary.main' : 'text.disabled',
-        }
+        borderColor: task.is_running ? theme.primary : DESIGN_TOKENS.borderColor,
+        backgroundColor: 'rgba(15, 23, 42, 0.75)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        boxShadow: task.is_running ? `0 16px 40px ${theme.glow}` : '0 10px 30px rgba(0, 0, 0, 0.3)',
+        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        position: 'relative',
+        overflow: 'hidden',
       }}
     >
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center" justifyContent="space-between">
-        <Box>
-          <Typography variant="h6" fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-            {task.task_name}
-            <Typography component="span" variant="body2" sx={{ color: 'text.secondary', fontWeight: 'normal' }}>
-              ({task.role})
-            </Typography>
-            {task.source_day && (
-              <Typography component="span" variant="caption" sx={{ px: 1, py: 0.2, borderRadius: 1, bgcolor: 'secondary.main', color: 'secondary.contrastText', fontWeight: 'bold' }}>
-                Rollover: {task.source_day}
-              </Typography>
-            )}
-          </Typography>
-          <Typography variant="body2" color={task.is_running ? 'success.main' : 'text.secondary'} sx={{ fontWeight: 'medium', mt: 0.5 }}>
-            Status: {task.is_running ? '● Running' : 'Paused'}
-          </Typography>
+      <Stack direction={{ xs: 'column', md: 'row' }} spacing={3} alignItems="center" justifyContent="space-between">
+        {/* Circular Canvas Timer */}
+        <Box sx={{ flexShrink: 0 }}>
+          <CircularTimerCanvas
+            elapsedSeconds={elapsed}
+            targetSeconds={targetSeconds}
+            isRunning={task.is_running}
+            role={task.role}
+            size={240}
+          />
         </Box>
 
-        <Stack direction="row" spacing={2} alignItems="center" sx={{ width: { xs: '100%', sm: 'auto' }, justifyContent: 'space-between' }}>
-          <Typography 
-            variant="h4" 
-            sx={{ 
-              fontFamily: 'monospace', 
-              fontWeight: 'bold', 
-              color: displayTimeStr.startsWith('-') ? 'error.main' : 'inherit',
-              minWidth: 100,
-              textAlign: 'right',
-              mr: 2,
-            }}
-          >
-            {displayTimeStr}
-          </Typography>
-
-          <Stack direction="row" spacing={1}>
-            {task.is_running ? (
-              <Button 
-                variant="outlined" 
-                color="warning" 
+        {/* Task Info & Controls */}
+        <Stack spacing={2} sx={{ width: '100%', minWidth: 0, alignItems: { xs: 'center', md: 'flex-start' } }}>
+          <Box sx={{ textAlign: { xs: 'center', md: 'left' }, width: '100%' }}>
+            <Stack direction="row" spacing={1} alignItems="center" justifyContent={{ xs: 'center', md: 'flex-start' }} sx={{ mb: 1, flexWrap: 'wrap', gap: 1 }}>
+              <Chip
                 size="small"
-                onClick={() => onPause(task.task_name)} 
+                label={theme.label}
+                sx={{
+                  bgcolor: theme.badgeBg,
+                  color: theme.primary,
+                  fontWeight: 700,
+                  border: `1px solid ${theme.primary}40`,
+                  fontSize: '0.75rem',
+                }}
+              />
+              {task.target_duration ? (
+                <Chip
+                  size="small"
+                  label={`Цель: ${task.target_duration} мин`}
+                  sx={{
+                    bgcolor: 'rgba(255, 255, 255, 0.06)',
+                    color: DESIGN_TOKENS.textSecondary,
+                    fontSize: '0.75rem',
+                  }}
+                />
+              ) : (
+                <Chip
+                  size="small"
+                  label="Свободный фокус"
+                  sx={{
+                    bgcolor: 'rgba(255, 255, 255, 0.06)',
+                    color: DESIGN_TOKENS.textSecondary,
+                    fontSize: '0.75rem',
+                  }}
+                />
+              )}
+              {task.source_day && (
+                <Chip
+                  size="small"
+                  label={`Rollover: ${task.source_day}`}
+                  sx={{
+                    bgcolor: 'rgba(59, 130, 246, 0.15)',
+                    color: '#60A5FA',
+                    fontSize: '0.75rem',
+                  }}
+                />
+              )}
+            </Stack>
+
+            <Typography
+              variant="h5"
+              fontWeight={800}
+              sx={{
+                color: DESIGN_TOKENS.textPrimary,
+                letterSpacing: '-0.02em',
+                lineHeight: 1.2,
+                mb: 0.5,
+              }}
+            >
+              {task.task_name}
+            </Typography>
+
+            <Typography
+              variant="body2"
+              sx={{
+                color: task.is_running ? theme.light : DESIGN_TOKENS.textMuted,
+                fontWeight: 600,
+              }}
+            >
+              {task.is_running ? '● Сессия в процессе' : '⏸ На паузе'}
+            </Typography>
+          </Box>
+
+          {/* Quick delta buttons (+5m / -5m) */}
+          {onAdjustDuration && (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted, fontWeight: 600 }}>
+                Коррекция времени:
+              </Typography>
+              <Chip
+                size="small"
+                icon={<RemoveRoundedIcon fontSize="small" />}
+                label="5 мин"
+                onClick={() => onAdjustDuration(-5)}
+                sx={{ cursor: 'pointer', bgcolor: 'rgba(255, 255, 255, 0.05)', color: DESIGN_TOKENS.textSecondary }}
+              />
+              <Chip
+                size="small"
+                icon={<AddRoundedIcon fontSize="small" />}
+                label="5 мин"
+                onClick={() => onAdjustDuration(5)}
+                sx={{ cursor: 'pointer', bgcolor: 'rgba(255, 255, 255, 0.05)', color: DESIGN_TOKENS.textSecondary }}
+              />
+            </Stack>
+          )}
+
+          {/* Action Buttons */}
+          <Stack direction="row" spacing={1.5} sx={{ width: '100%', pt: 0.5 }}>
+            {task.is_running ? (
+              <Button
+                variant="outlined"
+                fullWidth
+                onClick={() => onPause(task.task_name)}
                 startIcon={<PauseRoundedIcon />}
+                sx={{
+                  py: 1.2,
+                  borderColor: 'rgba(245, 158, 11, 0.4)',
+                  color: '#FBBF24',
+                  '&:hover': { borderColor: '#F59E0B', bgcolor: 'rgba(245, 158, 11, 0.1)' },
+                }}
               >
-                Pause
+                Пауза (Space)
               </Button>
             ) : (
-              <Button 
-                variant="contained" 
-                color="success" 
-                size="small"
-                onClick={() => onResume(task.task_name)} 
+              <Button
+                variant="contained"
+                fullWidth
+                onClick={() => onResume(task.task_name)}
                 startIcon={<PlayArrowRoundedIcon />}
+                sx={{
+                  py: 1.2,
+                  bgcolor: theme.primary,
+                  color: '#0B0F17',
+                  boxShadow: `0 4px 16px ${theme.glow}`,
+                  '&:hover': { bgcolor: theme.light },
+                }}
               >
-                Resume
+                Возобновить (Space)
               </Button>
             )}
 
-            <Button 
-              variant="contained" 
-              color="error" 
-              size="small"
-              onClick={() => onStop(task.task_name)} 
+            <Button
+              variant="contained"
+              fullWidth
+              color="error"
+              onClick={() => onStop(task.task_name)}
               startIcon={<StopRoundedIcon />}
+              sx={{
+                py: 1.2,
+                bgcolor: 'rgba(239, 68, 68, 0.2)',
+                color: '#F87171',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.3)', borderColor: '#EF4444' },
+              }}
             >
-              Stop
+              Завершить
             </Button>
           </Stack>
         </Stack>
@@ -181,37 +272,16 @@ function TaskTimerItem({ task, onStop, onPause, onResume }: TaskTimerItemProps) 
 export default function Timer() {
   const [runningTasks, setRunningTasks] = useState<RunningTask[]>([])
   const [taskName, setTaskName] = useState('')
-  const [role, setRole] = useState('work')
+  const [role, setRole] = useState<'work' | 'learn' | 'rest'>('work')
+  const [targetMinutes, setTargetMinutes] = useState<number>(25)
+  const [timerMode, setTimerMode] = useState<TimerMode>('pomodoro')
+
   const [msg, setMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [availableTasks, setAvailableTasks] = useState<TaskResult[]>([])
 
   const [sequenceMode, setSequenceMode] = useState<SequenceMode>('none')
   const [nextTaskInfo, setNextTaskInfo] = useState<NextTaskInfo | null>(null)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-
-  // Initialize audio
-  useEffect(() => {
-    const snd = new Audio('data:audio/mp3;base64,//NExAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq')
-    audioRef.current = snd
-  }, [])
-
-  const playBeep = () => {
-    try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
-      const osc = ctx.createOscillator()
-      const gainNode = ctx.createGain()
-      osc.connect(gainNode)
-      gainNode.connect(ctx.destination)
-      osc.type = 'sine'
-      osc.frequency.value = 800
-      gainNode.gain.setValueAtTime(0, ctx.currentTime)
-      gainNode.gain.linearRampToValueAtTime(1, ctx.currentTime + 0.01)
-      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
-      osc.start(ctx.currentTime)
-      osc.stop(ctx.currentTime + 0.5)
-    } catch(e) { console.error('Audio failed', e) }
-  }
 
   // Load available tasks
   useEffect(() => {
@@ -220,7 +290,7 @@ export default function Timer() {
         const tasks = await api.getTaskList()
         setAvailableTasks(tasks)
       } catch (e) {
-        console.error("Failed to load tasks", e)
+        console.error('Failed to load tasks', e)
       }
     }
     loadTasks()
@@ -232,8 +302,6 @@ export default function Timer() {
       setRunningTasks(r.data || [])
       setError(null)
     } catch (e: any) {
-      // Keep the last known list on a transient poll failure instead of
-      // wiping active timers from the screen; just surface the error.
       setError(e.message || 'Failed to refresh running tasks')
     }
   }
@@ -246,26 +314,34 @@ export default function Timer() {
 
   const handleStart = async (e?: React.FormEvent, forceTaskInfo?: NextTaskInfo) => {
     if (e) e.preventDefault()
-    setMsg(null); setError(null)
+    setMsg(null)
+    setError(null)
 
     let tName = forceTaskInfo ? forceTaskInfo.taskName : taskName
     let tRole = forceTaskInfo ? forceTaskInfo.role : role
-    let tTarget = forceTaskInfo ? forceTaskInfo.targetDuration : undefined
+    let tTarget = forceTaskInfo
+      ? forceTaskInfo.targetDuration
+      : timerMode === 'pomodoro'
+      ? targetMinutes
+      : undefined
     let tSource = forceTaskInfo ? forceTaskInfo.sourceDay : undefined
 
     tName = tName.trim()
-    if (!tName) { setError('Task name is required'); return }
-
-    // Free-typed names may be a typo of an existing task (extra space,
-    // different casing) - snap to the real task's name/role instead of
-    // silently starting a separate, fragmented task bucket.
-    if (!forceTaskInfo) {
-      const match = availableTasks.find(t => t.name.trim().toLowerCase() === tName.toLowerCase())
-      if (match) { tName = match.name; tRole = match.role }
+    if (!tName) {
+      setError('Введите название задачи')
+      return
     }
 
-    if (runningTasks.some(t => t.task_name.toLowerCase() === tName.toLowerCase())) {
-      setError(`Task '${tName}' is already active`)
+    if (!forceTaskInfo) {
+      const match = availableTasks.find((t) => t.name.trim().toLowerCase() === tName.toLowerCase())
+      if (match) {
+        tName = match.name
+        tRole = (match.role as 'work' | 'learn' | 'rest') || role
+      }
+    }
+
+    if (runningTasks.some((t) => t.task_name.toLowerCase() === tName.toLowerCase())) {
+      setError(`Задача '${tName}' уже активна`)
       return
     }
 
@@ -274,49 +350,90 @@ export default function Timer() {
         task_name: tName,
         role: tRole,
         target_duration: tTarget,
-        source_day: tSource
+        source_day: tSource,
       })
-      setRunningTasks(prev => [...prev.filter(t => t.task_name !== tName), r.data])
+      soundSynth.playStart()
+      setRunningTasks((prev) => [...prev.filter((t) => t.task_name !== tName), r.data])
       setTaskName('')
       setNextTaskInfo(null)
-    } catch (e: any) { setError(e.message) }
+    } catch (e: any) {
+      setError(e.message)
+    }
   }
 
   const handleStop = async (tName: string, autoBlocked: boolean = false) => {
-    setMsg(null); setError(null)
+    setMsg(null)
+    setError(null)
     try {
       await api.stopTask({ task_name: tName })
-      setRunningTasks(prev => prev.filter(t => t.task_name !== tName))
+      setRunningTasks((prev) => prev.filter((t) => t.task_name !== tName))
       if (autoBlocked) {
-        playBeep()
-        setMsg(`Timer finished and saved for '${tName}'!`)
+        soundSynth.playComplete()
+        setMsg(`🎉 Спринт завершен и сохранен для '${tName}'!`)
       } else {
-        setMsg(`Task '${tName}' stopped and saved`)
+        soundSynth.playPause()
+        setMsg(`Задача '${tName}' остановлена и сохранена`)
       }
-    } catch (e: any) { setError(e.message) }
+    } catch (e: any) {
+      setError(e.message)
+    }
   }
 
   const handlePause = async (tName: string) => {
     setError(null)
     try {
       const r = await api.pauseTask({ task_name: tName })
-      setRunningTasks(prev => prev.map(t => t.task_name === tName ? r.data : t))
-    } catch (e: any) { setError(e.message) }
+      soundSynth.playPause()
+      setRunningTasks((prev) => prev.map((t) => (t.task_name === tName ? r.data : t)))
+    } catch (e: any) {
+      setError(e.message)
+    }
   }
 
   const handleResume = async (tName: string) => {
     setError(null)
     try {
       const r = await api.resumeTask({ task_name: tName })
-      setRunningTasks(prev => prev.map(t => t.task_name === tName ? r.data : t))
-    } catch (e: any) { setError(e.message) }
+      soundSynth.playStart()
+      setRunningTasks((prev) => prev.map((t) => (t.task_name === tName ? r.data : t)))
+    } catch (e: any) {
+      setError(e.message)
+    }
   }
+
+  const handleAdjustRunningDuration = (deltaMin: number) => {
+    setRunningTasks((prev) =>
+      prev.map((t) => {
+        const cur = t.target_duration || targetMinutes
+        const next = Math.max(5, cur + deltaMin)
+        return { ...t, target_duration: next }
+      })
+    )
+  }
+
+  // Hotkeys handling
+  const togglePlayActive = useCallback(() => {
+    if (runningTasks.length > 0) {
+      const active = runningTasks[0]
+      if (active.is_running) {
+        handlePause(active.task_name)
+      } else {
+        handleResume(active.task_name)
+      }
+    }
+  }, [runningTasks])
+
+  useHotkeys({
+    onTogglePlay: togglePlayActive,
+    onSelectRole: (newRole) => setRole(newRole),
+  })
 
   const fetchingNextRef = useRef(false)
   const fetchNextSequenceTask = async () => {
     if (fetchingNextRef.current) return
     fetchingNextRef.current = true
-    setMsg(null); setError(null)
+    setMsg(null)
+    setError(null)
     try {
       let tName = ''
       let sourceDay = ''
@@ -325,76 +442,101 @@ export default function Timer() {
 
       if (sequenceMode === 'percent') {
         const r = await api.getTaskPlanPercentWithSchedule()
-        if (!r) throw new Error("No tasks available in plan percent")
+        if (!r) throw new Error('No tasks available in plan percent')
         tName = r.task_name
         sourceDay = r.source_day || ''
-        
-        const taskDef = availableTasks.find(t => t.name === tName)
-        tRole = taskDef?.role || 'work'
-        
-        let timeLeft = r.time_left
-        let defDur = taskDef?.time_duration || 25
-        targetDuration = (timeLeft > 0 && timeLeft < defDur) ? timeLeft : defDur
 
+        const taskDef = availableTasks.find((t) => t.name === tName)
+        tRole = taskDef?.role || 'work'
+
+        const timeLeft = r.time_left
+        const defDur = taskDef?.time_duration || 25
+        targetDuration = timeLeft > 0 && timeLeft < defDur ? timeLeft : defDur
       } else if (sequenceMode === 'backlog') {
         const r = await api.getRolloverTasks()
         if (!r.data || !r.data.rollover_tasks || r.data.rollover_tasks.length === 0) {
-            throw new Error("No backlog tasks found or all completed")
+          throw new Error('No backlog tasks found or all completed')
         }
         const tasks = r.data.rollover_tasks.filter((t: any) => t.remaining_time > 0)
-        if (tasks.length === 0) throw new Error("All backlog tasks completed")
-        
+        if (tasks.length === 0) throw new Error('All backlog tasks completed')
+
         const first = tasks[0]
         tName = first.task_name
         tRole = first.role || 'work'
         sourceDay = first.source_day || ''
-        
-        const taskDef = availableTasks.find(t => t.name === tName)
-        let defDur = taskDef?.time_duration || 25
-        targetDuration = (first.remaining_time > 0 && first.remaining_time < defDur) ? first.remaining_time : defDur
+
+        const taskDef = availableTasks.find((t) => t.name === tName)
+        const defDur = taskDef?.time_duration || 25
+        targetDuration = first.remaining_time > 0 && first.remaining_time < defDur ? first.remaining_time : defDur
       }
 
       setNextTaskInfo({
         taskName: tName,
         role: tRole,
         targetDuration,
-        sourceDay
+        sourceDay,
       })
-      setMsg(`Next task fetched: ${tName} (${targetDuration} min). Click start when ready.`)
-
+      setMsg(`Следующая задача: ${tName} (${targetDuration} мин). Нажмите "Старт" для запуска.`)
     } catch (e: any) {
-        setError(e.message)
-        setSequenceMode('none')
+      setError(e.message)
+      setSequenceMode('none')
     } finally {
-        fetchingNextRef.current = false
+      fetchingNextRef.current = false
     }
   }
 
-  // Fetch sequence when mode changes to something active
+  // Fetch sequence when mode changes
   useEffect(() => {
     if (sequenceMode !== 'none' && runningTasks.length === 0 && !nextTaskInfo) {
-        fetchNextSequenceTask()
+      fetchNextSequenceTask()
     }
     if (sequenceMode === 'none') {
-        setNextTaskInfo(null)
+      setNextTaskInfo(null)
     }
   }, [sequenceMode, runningTasks])
 
+  // Contextual Quick Tags: Combine standard role tags + tasks available in schedule for this role
+  const quickTags = [
+    ...(ROLE_TAGS[role] || []),
+    ...availableTasks.filter((t) => t.role === role).map((t) => t.name),
+  ].filter((v, i, arr) => arr.indexOf(v) === i)
+
   return (
     <Grid container spacing={3}>
-      <Grid item xs={12} md={9}>
-        <Card title="Active Timers" subtitle="Track your active and paused tasks" icon={<AvTimerOutlinedIcon />}>
-          <Stack direction="row" justifyContent="flex-end" mb={2}>
+      <Grid item xs={12} md={10} lg={9} sx={{ mx: 'auto' }}>
+        <Card
+          title="Интерактивный таймер"
+          subtitle="TimeFlow Canvas — фокус, трекинг и помодоро-спринты"
+          icon={<AvTimerOutlinedIcon />}
+        >
+          {/* Sequence mode selector & Hotkey hint */}
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            justifyContent="space-between"
+            alignItems={{ xs: 'flex-start', sm: 'center' }}
+            spacing={2}
+            sx={{ mb: 3 }}
+          >
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted }}>
+                Горячие клавиши: <kbd style={{ background: 'rgba(255,255,255,0.08)', padding: '2px 6px', borderRadius: 4, fontFamily: DESIGN_TOKENS.fontMono }}>Space</kbd> Старт/Пауза, <kbd style={{ background: 'rgba(255,255,255,0.08)', padding: '2px 6px', borderRadius: 4, fontFamily: DESIGN_TOKENS.fontMono }}>1-3</kbd> Категории
+              </Typography>
+            </Stack>
+
             <FormControl size="small" sx={{ minWidth: 200 }}>
-              <InputLabel>Sequence Mode</InputLabel>
+              <InputLabel sx={{ color: DESIGN_TOKENS.textSecondary }}>Режим последовательности</InputLabel>
               <Select
-                label="Sequence Mode"
+                label="Режим последовательности"
                 value={sequenceMode}
                 onChange={(e) => setSequenceMode(e.target.value as SequenceMode)}
+                sx={{
+                  bgcolor: 'rgba(15, 23, 42, 0.6)',
+                  color: DESIGN_TOKENS.textPrimary,
+                }}
               >
-                <MenuItem value="none">Manual Focus</MenuItem>
-                <MenuItem value="percent">Gamified Plan (Percent)</MenuItem>
-                <MenuItem value="backlog">Gamified Backlog</MenuItem>
+                <MenuItem value="none">Ручной выбор (Manual)</MenuItem>
+                <MenuItem value="percent">Геймификация плана (%)</MenuItem>
+                <MenuItem value="backlog">Геймификация бэклога</MenuItem>
               </Select>
             </FormControl>
           </Stack>
@@ -402,7 +544,8 @@ export default function Timer() {
           {error && <Alert type="error">{error}</Alert>}
           {msg && <Alert type="success">{msg}</Alert>}
 
-          <Stack spacing={2} sx={{ mb: 4 }}>
+          {/* Active Running Task Display */}
+          <Stack spacing={2.5} sx={{ mb: 4 }}>
             {runningTasks.length > 0 ? (
               runningTasks.map((task) => (
                 <TaskTimerItem
@@ -411,83 +554,262 @@ export default function Timer() {
                   onStop={handleStop}
                   onPause={handlePause}
                   onResume={handleResume}
+                  onAdjustDuration={handleAdjustRunningDuration}
                 />
               ))
             ) : (
-              <Typography variant="body1" color="text.secondary" textAlign="center" py={4}>
-                No tasks are currently active. Start a task below.
-              </Typography>
+              <Box
+                sx={{
+                  py: 6,
+                  px: 3,
+                  textAlign: 'center',
+                  bgcolor: 'rgba(15, 23, 42, 0.4)',
+                  borderRadius: 3.5,
+                  border: `1px dashed ${DESIGN_TOKENS.borderColor}`,
+                }}
+              >
+                <Typography variant="h6" fontWeight={700} sx={{ color: DESIGN_TOKENS.textSecondary, mb: 0.5 }}>
+                  Нет активных таймеров
+                </Typography>
+                <Typography variant="body2" sx={{ color: DESIGN_TOKENS.textMuted }}>
+                  Выберите категорию, длительность или быстрый тег ниже для старта сессии
+                </Typography>
+              </Box>
             )}
           </Stack>
 
-          <Divider sx={{ my: 4 }} />
+          <Divider sx={{ my: 3.5, borderColor: DESIGN_TOKENS.borderColor }} />
 
-          <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ mb: 2 }}>
-            Start a Task
+          {/* Gamified Next Task or Manual Start Form */}
+          <Typography variant="h6" fontWeight={800} sx={{ mb: 2, letterSpacing: '-0.01em' }}>
+            Запустить сессию
           </Typography>
 
           {nextTaskInfo && sequenceMode !== 'none' ? (
-            <Stack spacing={2} width="100%" alignItems="center" sx={{ p: 2, bgcolor: 'action.hover', borderRadius: 2 }}>
-              <Typography variant="h6" color="primary" textAlign="center">
-                Next Sequence Task: <strong>{nextTaskInfo.taskName}</strong>
-                <Typography component="span" variant="body2" sx={{ ml: 1, color: 'text.secondary' }}>
-                  ({nextTaskInfo.targetDuration} min)
+            <Box
+              sx={{
+                p: 3,
+                bgcolor: 'rgba(19, 27, 42, 0.85)',
+                border: `1px solid ${ROLE_THEMES[nextTaskInfo.role]?.primary || DESIGN_TOKENS.borderColor}`,
+                borderRadius: 3,
+                boxShadow: `0 8px 30px ${ROLE_THEMES[nextTaskInfo.role]?.glow || 'none'}`,
+              }}
+            >
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                <FlashOnRoundedIcon sx={{ color: ROLE_THEMES[nextTaskInfo.role]?.primary }} />
+                <Typography variant="subtitle1" fontWeight={700} sx={{ color: DESIGN_TOKENS.textPrimary }}>
+                  Следующая задача по плану: {nextTaskInfo.taskName}
                 </Typography>
-                {nextTaskInfo.sourceDay && (
-                  <Typography component="span" variant="body2" color="secondary" sx={{ ml: 1 }}>
-                    [From: {nextTaskInfo.sourceDay}]
-                  </Typography>
-                )}
+              </Stack>
+              <Typography variant="body2" sx={{ color: DESIGN_TOKENS.textSecondary, mb: 2.5 }}>
+                Длительность: {nextTaskInfo.targetDuration} мин &nbsp;|&nbsp; Категория:{' '}
+                {ROLE_THEMES[nextTaskInfo.role]?.label}{' '}
+                {nextTaskInfo.sourceDay && ` [Из: ${nextTaskInfo.sourceDay}]`}
               </Typography>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} width="100%">
-                <Button variant="contained" size="large" fullWidth onClick={() => handleStart(undefined, nextTaskInfo)} startIcon={<PlayArrowRoundedIcon />}>
-                  Start Gamified Task
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                <Button
+                  variant="contained"
+                  size="large"
+                  fullWidth
+                  onClick={() => handleStart(undefined, nextTaskInfo)}
+                  startIcon={<PlayArrowRoundedIcon />}
+                  sx={{
+                    py: 1.4,
+                    bgcolor: ROLE_THEMES[nextTaskInfo.role]?.primary || ROLE_THEMES.work.primary,
+                    color: '#0B0F17',
+                    fontWeight: 700,
+                  }}
+                >
+                  Запустить задачу ({nextTaskInfo.targetDuration} мин)
                 </Button>
-                <Button variant="outlined" size="large" color="secondary" fullWidth onClick={fetchNextSequenceTask} startIcon={<SkipNextRoundedIcon />}>
-                  Skip to Next
+                <Button
+                  variant="outlined"
+                  size="large"
+                  fullWidth
+                  onClick={fetchNextSequenceTask}
+                  startIcon={<SkipNextRoundedIcon />}
+                  sx={{ py: 1.4 }}
+                >
+                  Пропустить
                 </Button>
               </Stack>
-            </Stack>
+            </Box>
           ) : (
-            <Stack component="form" onSubmit={handleStart} spacing={2} width="100%" direction={{ xs: 'column', sm: 'row' }} alignItems="center">
-              <Autocomplete
-                options={availableTasks.map(t => t.name)}
-                value={taskName}
-                onChange={(_, newValue) => {
-                    setTaskName(newValue || '')
-                    const f = availableTasks.find(t=>t.name===newValue)
-                    if(f) setRole(f.role)
-                }}
-                freeSolo={true}
-                fullWidth
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Task Name"
-                    required
+            <Stack component="form" onSubmit={handleStart} spacing={2.5}>
+              {/* Category Quick Switcher Chips (1, 2, 3) */}
+              <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
+                <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted, fontWeight: 600 }}>
+                  Категория:
+                </Typography>
+                {(['work', 'learn', 'rest'] as const).map((rKey, idx) => {
+                  const rTheme = ROLE_THEMES[rKey]
+                  const isSelected = role === rKey
+                  return (
+                    <Chip
+                      key={rKey}
+                      label={`${idx + 1}. ${rTheme.label}`}
+                      onClick={() => setRole(rKey)}
+                      sx={{
+                        cursor: 'pointer',
+                        fontWeight: isSelected ? 700 : 500,
+                        fontSize: '0.82rem',
+                        py: 2,
+                        px: 0.5,
+                        bgcolor: isSelected ? rTheme.badgeBg : 'rgba(255, 255, 255, 0.04)',
+                        color: isSelected ? rTheme.primary : DESIGN_TOKENS.textSecondary,
+                        border: isSelected ? `1px solid ${rTheme.primary}` : `1px solid ${DESIGN_TOKENS.borderColor}`,
+                        boxShadow: isSelected ? `0 0 16px ${rTheme.glow}` : 'none',
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          bgcolor: isSelected ? rTheme.badgeBg : 'rgba(255, 255, 255, 0.08)',
+                        },
+                      }}
+                    />
+                  )
+                })}
+              </Stack>
+
+              {/* Mode & Preset Duration Pills */}
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'flex-start', sm: 'center' }}>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted, fontWeight: 600 }}>
+                    Режим:
+                  </Typography>
+                  <Chip
+                    label="Помодоро"
+                    size="small"
+                    onClick={() => setTimerMode('pomodoro')}
+                    sx={{
+                      cursor: 'pointer',
+                      bgcolor: timerMode === 'pomodoro' ? 'rgba(255, 255, 255, 0.14)' : 'transparent',
+                      color: timerMode === 'pomodoro' ? DESIGN_TOKENS.textPrimary : DESIGN_TOKENS.textMuted,
+                      border: `1px solid ${timerMode === 'pomodoro' ? 'rgba(255, 255, 255, 0.2)' : 'transparent'}`,
+                      fontWeight: 600,
+                    }}
                   />
+                  <Chip
+                    label="Секундомер"
+                    size="small"
+                    onClick={() => setTimerMode('free')}
+                    sx={{
+                      cursor: 'pointer',
+                      bgcolor: timerMode === 'free' ? 'rgba(255, 255, 255, 0.14)' : 'transparent',
+                      color: timerMode === 'free' ? DESIGN_TOKENS.textPrimary : DESIGN_TOKENS.textMuted,
+                      border: `1px solid ${timerMode === 'free' ? 'rgba(255, 255, 255, 0.2)' : 'transparent'}`,
+                      fontWeight: 600,
+                    }}
+                  />
+                </Stack>
+
+                {timerMode === 'pomodoro' && (
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                    <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted, fontWeight: 600 }}>
+                      Цель:
+                    </Typography>
+                    {TIMER_PRESETS.map((mins) => (
+                      <Chip
+                        key={mins}
+                        label={`${mins}м`}
+                        size="small"
+                        onClick={() => setTargetMinutes(mins)}
+                        sx={{
+                          cursor: 'pointer',
+                          fontFamily: DESIGN_TOKENS.fontMono,
+                          fontWeight: targetMinutes === mins ? 700 : 500,
+                          bgcolor: targetMinutes === mins ? ROLE_THEMES[role]?.badgeBg : 'rgba(255, 255, 255, 0.04)',
+                          color: targetMinutes === mins ? ROLE_THEMES[role]?.primary : DESIGN_TOKENS.textSecondary,
+                          border: targetMinutes === mins ? `1px solid ${ROLE_THEMES[role]?.primary}` : `1px solid ${DESIGN_TOKENS.borderColor}`,
+                        }}
+                      />
+                    ))}
+                    <Chip
+                      size="small"
+                      icon={<AddRoundedIcon fontSize="small" />}
+                      label="5м"
+                      onClick={() => setTargetMinutes((prev) => prev + 5)}
+                      sx={{ cursor: 'pointer', bgcolor: 'rgba(255,255,255,0.04)', color: DESIGN_TOKENS.textSecondary }}
+                    />
+                  </Stack>
                 )}
-              />
-              <TextField 
-                select 
-                label="Role" 
-                value={role} 
-                onChange={(e) => setRole(e.target.value)} 
-                sx={{ minWidth: 140, width: { xs: '100%', sm: 'auto' } }}
-              >
-                <MenuItem value="work">Work</MenuItem>
-                <MenuItem value="learn">Learn</MenuItem>
-                <MenuItem value="rest">Rest</MenuItem>
-              </TextField>
-              <Button 
-                variant="contained" 
-                type="submit" 
-                size="large" 
-                startIcon={<PlayArrowRoundedIcon />}
-                sx={{ py: 1.8, minWidth: 120, width: { xs: '100%', sm: 'auto' } }}
-              >
-                Start
-              </Button>
+              </Stack>
+
+              {/* Task Name and Autocomplete */}
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center">
+                <Autocomplete
+                  options={availableTasks.map((t) => t.name)}
+                  value={taskName}
+                  onChange={(_, newValue) => {
+                    setTaskName(newValue || '')
+                    const f = availableTasks.find((t) => t.name === newValue)
+                    if (f) setRole((f.role as 'work' | 'learn' | 'rest') || 'work')
+                  }}
+                  freeSolo
+                  fullWidth
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Название задачи"
+                      placeholder="Например: Разработка UI, Книга, Code review..."
+                      required
+                    />
+                  )}
+                />
+
+                <Button
+                  variant="contained"
+                  type="submit"
+                  size="large"
+                  startIcon={<PlayArrowRoundedIcon />}
+                  sx={{
+                    py: 1.8,
+                    px: 4,
+                    minWidth: 160,
+                    width: { xs: '100%', sm: 'auto' },
+                    bgcolor: ROLE_THEMES[role]?.primary || ROLE_THEMES.work.primary,
+                    color: '#0B0F17',
+                    fontWeight: 700,
+                    boxShadow: `0 4px 20px ${ROLE_THEMES[role]?.glow || 'rgba(255, 107, 74, 0.35)'}`,
+                  }}
+                >
+                  Старт {timerMode === 'pomodoro' ? `(${targetMinutes}м)` : ''}
+                </Button>
+              </Stack>
+
+              {/* Quick Tags Section */}
+              {quickTags.length > 0 && (
+                <Box sx={{ pt: 0.5 }}>
+                  <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted, fontWeight: 600, display: 'block', mb: 1 }}>
+                    Быстрые теги и задачи:
+                  </Typography>
+                  <Stack direction="row" spacing={0.8} flexWrap="wrap" useFlexGap>
+                    {quickTags.map((tag) => (
+                      <Chip
+                        key={tag}
+                        label={tag}
+                        size="small"
+                        onClick={() => {
+                          setTaskName(tag)
+                          const f = availableTasks.find((t) => t.name === tag)
+                          if (f) setRole((f.role as 'work' | 'learn' | 'rest') || role)
+                        }}
+                        sx={{
+                          cursor: 'pointer',
+                          fontSize: '0.75rem',
+                          bgcolor: 'rgba(255, 255, 255, 0.04)',
+                          color: DESIGN_TOKENS.textSecondary,
+                          border: `1px solid ${DESIGN_TOKENS.borderColor}`,
+                          transition: 'all 0.15s ease',
+                          '&:hover': {
+                            bgcolor: ROLE_THEMES[role]?.badgeBg,
+                            color: ROLE_THEMES[role]?.primary,
+                            borderColor: ROLE_THEMES[role]?.primary,
+                          },
+                        }}
+                      />
+                    ))}
+                  </Stack>
+                </Box>
+              )}
             </Stack>
           )}
         </Card>

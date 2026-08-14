@@ -1,36 +1,35 @@
 # tracker-web
 
-A modern web interface for the tracker system, providing a dashboard for statistics, task management, and timer control.
+A modern web interface and Telegram Mini App for `tracker-server`, providing dashboards for statistics, weekly schedule editing, plan rotation management, rest tracking, and live running-task timers.
 
 ## Project Overview
 
-- **Technology Stack**: React 18, TypeScript, Vite, Material UI (MUI) v6.
+- **Technology Stack**: React 18, TypeScript (strict), Vite, Material UI (MUI v6).
+- **Dual Runtime**: Operates both as a standalone web browser app and embedded inside Telegram as a Telegram Mini App (`window.Telegram.WebApp`).
 - **Architecture**:
-  - `src/api/`: API client definitions for interacting with the `tracker-server`.
-  - `src/components/`: Reusable UI components.
-  - `src/pages/`: Main application pages (Dashboard, Plan, Record, Rest, Manage, Timer).
-  - `src/utils/`: Helper functions and utilities.
-  - `src/theme.ts`: MUI theme configuration.
-- **Proxying**: The Vite dev server is configured to proxy `/api` requests to `http://localhost:3000` to avoid CORS issues during development.
+  - `src/main.tsx`: Entrypoint wrapping `App` in `BrowserRouter` and MUI `ThemeProvider`.
+  - `src/App.tsx`: App shell, navigation (desktop header + mobile bottom bar), and Telegram WebApp lifecycle (`ready()`, `expand()`, `BackButton`).
+  - `src/api/client.ts`: Centralized API client. Contains all DTO interfaces (matching `openapi.yml`) and typed request wrappers (`api.stats`, `api.timer`, etc.). Automatically attaches `X-Telegram-Init-Data` header when running in Telegram.
+  - `src/pages/`: Route components (`Dashboard.tsx`, `Schedule.tsx`, `Timer.tsx`, `Plan.tsx`, `Record.tsx`, `Rest.tsx`, `Manage.tsx`).
+  - `src/components/`: Reusable presentational components (`Card`, `Header`, `Progress`, `PlanPercents`).
+  - `src/theme.ts`: Custom MUI dark theme (indigo/cyan palette, pill buttons, glassmorphism cards).
+  - `src/utils/format.ts`: Utilities including `formatRestMinutes` (`units / 100`).
+- **Dev Proxy**: Vite dev server proxies `/api` requests to `http://localhost:3000`.
 
 ## Building and Running
-
-### Prerequisites
-- Node.js 18+
-- npm or yarn
 
 ### Development
 ```bash
 npm install
 npm run dev
 ```
-The application will be available at `http://localhost:5173`.
+Available at `http://localhost:5173`.
 
-### Production Build
+### Production Build & Type Verification
 ```bash
 npm run build
 ```
-The output will be in the `dist/` directory.
+Runs `tsc -b` (strict project-wide type check) and `vite build`. **Required verification step.**
 
 ### Preview Build
 ```bash
@@ -39,14 +38,8 @@ npm run preview
 
 ## Development Conventions
 
-- **State Management**: Uses React hooks and standard component state.
-- **Styling**: Primarily uses Material UI components and theme. Custom styles are in `src/styles.css`.
-- **API Interaction**: All API calls should be centralized in `src/api/` and use the base URL proxying.
-- **Type Safety**: Use TypeScript for all components and logic. Ensure API response interfaces are well-defined.
-
-## Key Features
-- **Dashboard**: Overview of today's progress and task status.
-- **Planning**: Manage task plan percentages and schedules.
-- **Recording**: Record time spent on tasks manually.
-- **Timer**: Active timer control for running tasks.
-- **Rest Management**: Track and manage rest minutes.
+- **Centralized API**: All API calls belong in `src/api/client.ts`. Never inline raw `fetch()` calls in pages.
+- **State Management**: Uses pure React hooks and local component state.
+- **Live Timer Model**: `Timer.tsx` / `TaskTimerItem` polls `/api/v1/timer/run/list` / status every 5s while maintaining a 1s local tick for visual smoothing.
+- **Rest-Time Conversion**: Always use `formatRestMinutes` to display rest time (`units = minutes * 100`).
+- **Styling**: Use MUI `sx` props referencing theme tokens.
