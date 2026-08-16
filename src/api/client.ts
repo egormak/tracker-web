@@ -181,6 +181,20 @@ export interface RolloverResponse {
   }
 }
 
+export function getTimerWebSocketUrl(): string {
+  const initData = window.Telegram?.WebApp?.initData
+  let base = API_BASE_URL
+  if (!base) {
+    const loc = window.location
+    const protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:'
+    base = `${protocol}//${loc.host}`
+  } else {
+    base = base.replace(/^http/, 'ws')
+  }
+  const params = initData ? `?initData=${encodeURIComponent(initData)}` : ''
+  return `${base}/api/v1/timer/ws${params}`
+}
+
 export interface RunningTask {
   id?: string
   task_name: string
@@ -190,6 +204,8 @@ export interface RunningTask {
   is_running: boolean
   target_duration?: number
   source_day?: string
+  last_heartbeat_at?: string
+  deadline_at?: string
 }
 
 export interface TaskRecord {
@@ -262,9 +278,10 @@ export const api = {
 
   // Running Timer
   startTask: (payload: { task_name: string; role: string; target_duration?: number; source_day?: string }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/start', payload),
-  stopTask: (payload?: { task_name?: string }) => request<{ status: string; data: TaskRecord }>('POST', '/api/v1/timer/run/stop', payload),
-  pauseTask: (payload?: { task_name?: string }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/pause', payload),
+  stopTask: (payload?: { task_name?: string; reason?: string }) => request<{ status: string; data: TaskRecord }>('POST', '/api/v1/timer/run/stop', payload),
+  pauseTask: (payload?: { task_name?: string; reason?: string }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/pause', payload),
   resumeTask: (payload?: { task_name?: string }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/resume', payload),
+  sendHeartbeat: (taskName?: string) => request<{ status: string; server_time: number; data: RunningTask }>('POST', '/api/v1/timer/run/heartbeat', { task_name: taskName }),
   getRunningTasks: () => request<{ status: string; data: RunningTask[] }>('GET', '/api/v1/timer/run/list'),
 
   // Evening Focus Mode

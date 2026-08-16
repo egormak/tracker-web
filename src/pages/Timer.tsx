@@ -27,6 +27,7 @@ import Card from '../components/Card'
 import { CircularTimerCanvas } from '../components/canvas/CircularTimerCanvas'
 import { soundSynth } from '../utils/audio'
 import { useHotkeys } from '../hooks/useHotkeys'
+import { useTimerSync } from '../hooks/useTimerSync'
 import { ROLE_THEMES, ROLE_TAGS, TIMER_PRESETS, DESIGN_TOKENS } from '../constants/themeColors'
 
 type SequenceMode = 'none' | 'percent' | 'backlog'
@@ -46,9 +47,10 @@ interface TaskTimerItemProps {
   onPause: (taskName: string) => void
   onResume: (taskName: string) => void
   onAdjustDuration?: (deltaMin: number) => void
+  serverTimeOffset?: number
 }
 
-function TaskTimerItem({ task, onStop, onPause, onResume, onAdjustDuration }: TaskTimerItemProps) {
+function TaskTimerItem({ task, onStop, onPause, onResume, onAdjustDuration, serverTimeOffset }: TaskTimerItemProps) {
   const [elapsed, setElapsed] = useState(0)
   const autoStoppedRef = useRef(false)
 
@@ -57,8 +59,8 @@ function TaskTimerItem({ task, onStop, onPause, onResume, onAdjustDuration }: Ta
     if (task.is_running) {
       const update = () => {
         const start = new Date(task.start_time).getTime()
-        const now = new Date().getTime()
-        const currentSessionSeconds = Math.floor((now - start) / 1000)
+        const now = new Date().getTime() + (serverTimeOffset || 0)
+        const currentSessionSeconds = Math.max(0, Math.floor((now - start) / 1000))
         setElapsed(task.accumulated * 60 + currentSessionSeconds)
       }
       update()
@@ -67,7 +69,7 @@ function TaskTimerItem({ task, onStop, onPause, onResume, onAdjustDuration }: Ta
       setElapsed(task.accumulated * 60)
     }
     return () => window.clearInterval(interval)
-  }, [task])
+  }, [task, serverTimeOffset])
 
   // Reset the auto-stop guard whenever this timer session stops being active
   useEffect(() => {
@@ -270,7 +272,6 @@ function TaskTimerItem({ task, onStop, onPause, onResume, onAdjustDuration }: Ta
 }
 
 export default function Timer() {
-  const [runningTasks, setRunningTasks] = useState<RunningTask[]>([])
   const [taskName, setTaskName] = useState('')
   const [role, setRole] = useState<'work' | 'learn' | 'rest'>('work')
   const [targetMinutes, setTargetMinutes] = useState<number>(25)
@@ -283,6 +284,21 @@ export default function Timer() {
   const [sequenceMode, setSequenceMode] = useState<SequenceMode>('none')
   const [nextTaskInfo, setNextTaskInfo] = useState<NextTaskInfo | null>(null)
 
+  const handleServerAutoStop = useCallback((tName: string, reason?: string) => {
+    soundSynth.playComplete()
+    if (reason === 'target_reached') {
+      setMsg(`🎉 Спринт завершен по дедлайну для '${tName}'!`)
+    } else if (reason === 'safety_cap_reached') {
+      setMsg(`⏹ Сессия для '${tName}' завершена по лимиту безопасности (20 мин).`)
+    } else if (reason === 'heartbeat_timeout') {
+      setMsg(`⏸ Сессия для '${tName}' приостановлена из-за таймаута активности.`)
+    } else {
+      setMsg(`Задача '${tName}' завершена`)
+    }
+  }, [])
+
+  const { runningTasks, setRunningTasks, isConnected, serverTimeOffset } = useTimerSync(handleServerAutoStop)
+
   // Load available tasks
   useEffect(() => {
     const loadTasks = async () => {
@@ -294,22 +310,6 @@ export default function Timer() {
       }
     }
     loadTasks()
-  }, [])
-
-  const loadStatus = async () => {
-    try {
-      const r = await api.getRunningTasks()
-      setRunningTasks(r.data || [])
-      setError(null)
-    } catch (e: any) {
-      setError(e.message || 'Failed to refresh running tasks')
-    }
-  }
-
-  useEffect(() => {
-    loadStatus()
-    const interval = window.setInterval(loadStatus, 5000)
-    return () => window.clearInterval(interval)
   }, [])
 
   const handleStart = async (e?: React.FormEvent, forceTaskInfo?: NextTaskInfo) => {
@@ -555,6 +555,7 @@ export default function Timer() {
                   onPause={handlePause}
                   onResume={handleResume}
                   onAdjustDuration={handleAdjustRunningDuration}
+                  serverTimeOffset={serverTimeOffset}
                 />
               ))
             ) : (
