@@ -294,6 +294,8 @@ export const api = {
 export interface EveningFocusCandidate {
   task_name: string
   role: string
+  weekly_done?: number
+  weekly_target?: number
   weekly_gap: number
   priority: number
   is_strict: boolean

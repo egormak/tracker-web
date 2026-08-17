@@ -119,7 +119,7 @@ export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask 
                 🎯 Рекомендуемая задача: {currentTask.task_name}
               </Typography>
               <Typography variant="body2" sx={{ color: DESIGN_TOKENS.textSecondary, mt: 0.5 }}>
-                📉 Недельное отставание: -{currentTask.weekly_gap} мин &nbsp;|&nbsp; ⏱️ Лимит отдыха: {data?.rest_pool} мин
+                📊 Сделано за неделю: {currentTask.weekly_done ?? 0} мин {currentTask.weekly_target ? `(план ${currentTask.weekly_target} мин)` : ''} &nbsp;|&nbsp; ⏱️ Лимит отдыха: {data?.rest_pool} мин
               </Typography>
             </Box>
 
