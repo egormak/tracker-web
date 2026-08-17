@@ -21,6 +21,7 @@ import FlashOnRoundedIcon from '@mui/icons-material/FlashOnRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
 
+import { useSearchParams } from 'react-router-dom'
 import { api, RunningTask, TaskResult } from '../api/client'
 import Alert from '../components/Alert'
 import Card from '../components/Card'
@@ -272,10 +273,27 @@ function TaskTimerItem({ task, onStop, onPause, onResume, onAdjustDuration, serv
 }
 
 export default function Timer() {
-  const [taskName, setTaskName] = useState('')
-  const [role, setRole] = useState<'work' | 'learn' | 'rest'>('work')
-  const [targetMinutes, setTargetMinutes] = useState<number>(25)
+  const [searchParams] = useSearchParams()
+  const [taskName, setTaskName] = useState(() => searchParams.get('task') || '')
+  const [role, setRole] = useState<'work' | 'learn' | 'rest'>(() => {
+    const r = searchParams.get('role')
+    return (r === 'learn' || r === 'rest' || r === 'work') ? r : 'work'
+  })
+  const [targetMinutes, setTargetMinutes] = useState<number>(() => {
+    const t = searchParams.get('target')
+    return t && !isNaN(Number(t)) ? Math.max(1, Number(t)) : 25
+  })
   const [timerMode, setTimerMode] = useState<TimerMode>('pomodoro')
+
+  useEffect(() => {
+    const paramTask = searchParams.get('task')
+    const paramRole = searchParams.get('role') as 'work' | 'learn' | 'rest' | null
+    const paramTarget = searchParams.get('target')
+
+    if (paramTask) setTaskName(paramTask)
+    if (paramRole && ['work', 'learn', 'rest'].includes(paramRole)) setRole(paramRole)
+    if (paramTarget && !isNaN(Number(paramTarget))) setTargetMinutes(Math.max(1, Number(paramTarget)))
+  }, [searchParams])
 
   const [msg, setMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)

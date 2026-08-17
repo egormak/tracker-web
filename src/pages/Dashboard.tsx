@@ -38,17 +38,20 @@ import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined'
 import FavoriteBorderOutlinedIcon from '@mui/icons-material/FavoriteBorderOutlined'
 import HistoryEduOutlinedIcon from '@mui/icons-material/HistoryEduOutlined'
 
+import { useNavigate } from 'react-router-dom'
 import { api, RestTimeResponse, RecordsSummary, TaskResult, WeeklyStatsResponse, RunningTask } from '../api/client'
 import Alert from '../components/Alert'
 import Card from '../components/Card'
 import Progress from '../components/Progress'
 import { EveningFocusCard } from '../components/EveningFocusCard'
+import { TodayTaskProgressCard } from '../components/TodayTaskProgressCard'
 import { formatRestMinutes } from '../utils/format'
 import { ROLE_COLORS, ROLE_THEMES, DESIGN_TOKENS } from '../constants/themeColors'
 import { Timeline24hCanvas, TimelineSession } from '../components/canvas/Timeline24hCanvas'
 import { DonutChartCanvas, DonutSegment } from '../components/canvas/DonutChartCanvas'
 
 export default function Dashboard() {
+  const navigate = useNavigate()
   const [records, setRecords] = useState<RecordsSummary | null>(null)
   const [rest, setRest] = useState<RestTimeResponse | null>(null)
   const [tasks, setTasks] = useState<TaskResult[]>([])
@@ -92,6 +95,34 @@ export default function Dashboard() {
       mounted = false
     }
   }, [])
+
+  const handleStartTask = async (taskName: string, role: string, duration?: number) => {
+    try {
+      await api.startTask({
+        task_name: taskName,
+        role: role || 'work',
+        target_duration: duration || 25,
+      })
+      navigate(`/timer?task=${encodeURIComponent(taskName)}&role=${encodeURIComponent(role)}&target=${duration || 25}`)
+    } catch (_e) {
+      navigate(`/timer?task=${encodeURIComponent(taskName)}&role=${encodeURIComponent(role)}&target=${duration || 25}`)
+    }
+  }
+
+  const handleApplySchedule = async () => {
+    try {
+      setError(null)
+      await api.applySchedule()
+      const [rec, tl] = await Promise.all([
+        api.getRecordsSummary(),
+        api.getStatsTasksToday(),
+      ])
+      setRecords(rec)
+      setTasks(tl)
+    } catch (e: any) {
+      setError(e.message)
+    }
+  }
 
   // Insights from weekly stats
   const insights = useMemo(() => {
@@ -356,6 +387,17 @@ export default function Dashboard() {
       <EveningFocusCard />
 
       <Grid container spacing={{ xs: 2, md: 3 }} alignItems="stretch">
+        {/* Today's Task Progress & Analytics */}
+        <Grid item xs={12}>
+          <TodayTaskProgressCard
+            tasks={tasks}
+            runningTasks={runningTasks}
+            isDemoMode={isDemoMode}
+            onStartTask={handleStartTask}
+            onApplySchedule={handleApplySchedule}
+          />
+        </Grid>
+
         {/* 1. Overview Metric Tiles */}
         <Grid item xs={12} md={6}>
           <Card title="Сводка активности" subtitle="Метрики текущего дня" icon={<TaskAltOutlinedIcon />}>
