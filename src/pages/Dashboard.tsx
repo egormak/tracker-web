@@ -384,7 +384,7 @@ export default function Dashboard() {
         </Button>
       </Stack>
 
-      <EveningFocusCard />
+      <EveningFocusCard onStartTask={handleStartTask} />
 
       <Grid container spacing={{ xs: 2, md: 3 }} alignItems="stretch">
         {/* Today's Task Progress & Analytics */}

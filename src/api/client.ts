@@ -1,7 +1,7 @@
 // If not provided, use same-origin ('') which works with Vite dev proxy
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
-type HttpMethod = 'GET' | 'POST' | 'DELETE' | 'PUT'
+type HttpMethod = 'GET' | 'POST' | 'DELETE' | 'PUT' | 'PATCH'
 
 async function request<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -231,6 +231,7 @@ export const api = {
   getTaskPlanPercent: () => request<PlanPercentResponse>('GET', '/api/v1/task/plan/percent'),
   getTaskPlanPercentWithSchedule: (taskName?: string) => request<PlanPercentResponse>('GET', `/api/v1/task/plan/percent/schedule${taskName ? `?task_name=${encodeURIComponent(taskName)}` : ''}`),
   getPlanPercents: () => request<PlanPercentsResponse>('GET', '/api/v1/manage/plan-percents'),
+  rotatePlanPercent: () => request<SuccessResponse>('POST', '/api/v1/task/plan/rotate'),
   changeLegacyPlanPercent: () => request<SuccessResponse>('GET', '/api/v1/task/plan-percent/change'),
   setProcents: (procents: number[], role_name?: string) =>
     request<SuccessResponse>('POST', '/api/v1/manage/procents', { procents, role_name }),
@@ -239,6 +240,7 @@ export const api = {
 
   // Records
   addTaskRecord: (payload: TaskRecordRequest) => request<SuccessResponse>('POST', '/api/v1/taskrecord', payload),
+  cleanRecords: () => request<SuccessResponse>('POST', '/api/v1/records/clean'),
 
   // Rest
   restGet: () => request<RestTimeResponse>('GET', '/api/v1/rest/get'),
@@ -259,6 +261,8 @@ export const api = {
     request<{ status: string; data: { schedule_id: string; is_active: boolean }; message: string }>('POST', '/api/v1/schedule', payload),
   getActiveSchedule: () =>
     request<{ status: string; data: WeeklySchedule }>('GET', '/api/v1/schedule/active'),
+  updateScheduleTaskTime: (payload: { task_name: string; minutes?: number; delta_minutes?: number; day?: string }) =>
+    request<{ status: string; message: string; data: WeeklySchedule }>('PATCH', '/api/v1/schedule/active/task-time', payload),
   getSchedule: (id: string) =>
     request<{ status: string; data: WeeklySchedule }>('GET', `/api/v1/schedule/${id}`),
   updateSchedule: (id: string, schedule: Omit<WeeklySchedule, 'id' | 'title' | 'created_at' | 'updated_at' | 'is_active'>) =>
@@ -281,6 +285,7 @@ export const api = {
   stopTask: (payload?: { task_name?: string; reason?: string }) => request<{ status: string; data: TaskRecord }>('POST', '/api/v1/timer/run/stop', payload),
   pauseTask: (payload?: { task_name?: string; reason?: string }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/pause', payload),
   resumeTask: (payload?: { task_name?: string }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/resume', payload),
+  adjustRunningTask: (taskName: string, deltaMinutes: number) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/adjust', { task_name: taskName, delta_minutes: deltaMinutes }),
   sendHeartbeat: (taskName?: string) => request<{ status: string; server_time: number; data: RunningTask }>('POST', '/api/v1/timer/run/heartbeat', { task_name: taskName }),
   getRunningTasks: () => request<{ status: string; data: RunningTask[] }>('GET', '/api/v1/timer/run/list'),
 

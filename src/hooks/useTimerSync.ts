@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { api, RunningTask, getTimerWebSocketUrl } from '../api/client'
 
 export interface TimerEvent {
-  type: 'TASK_STARTED' | 'TASK_PAUSED' | 'TASK_RESUMED' | 'TASK_STOPPED' | 'HEARTBEAT_ACK' | 'STATE_SYNC'
+  type: 'TASK_STARTED' | 'TASK_PAUSED' | 'TASK_RESUMED' | 'TASK_STOPPED' | 'TASK_ADJUSTED' | 'HEARTBEAT_ACK' | 'STATE_SYNC'
   task_name?: string
   role?: string
   duration?: number
@@ -95,6 +95,14 @@ export function useTimerSync(onServerAutoStop?: (taskName: string, reason?: stri
                   if (data.reason && data.reason !== 'manual') {
                     onServerAutoStopRef.current?.(data.task_name, data.reason)
                   }
+                }
+                break
+
+              case 'TASK_ADJUSTED':
+                if (data.data && data.data.task_name) {
+                  setRunningTasks((prev) =>
+                    prev.map((t) => (t.task_name === data.data.task_name ? data.data : t))
+                  )
                 }
                 break
 

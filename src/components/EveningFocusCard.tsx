@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, Typography, Button, Box, Chip, Stack, CircularProgress } from '@mui/material'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import SkipNextIcon from '@mui/icons-material/SkipNext'
@@ -7,10 +8,11 @@ import { api, EveningFocusResponse } from '../api/client'
 import { ROLE_THEMES, DESIGN_TOKENS } from '../constants/themeColors'
 
 interface EveningFocusCardProps {
-  onStartTask?: (taskName: string, duration: number) => void
+  onStartTask?: (taskName: string, role: string, duration?: number) => void
 }
 
 export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask }) => {
+  const navigate = useNavigate()
   const [loading, setLoading] = useState<boolean>(true)
   const [data, setData] = useState<EveningFocusResponse | null>(null)
   const [sprintTime, setSprintTime] = useState<number>(20)
@@ -148,7 +150,28 @@ export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask 
               <Button
                 variant="contained"
                 startIcon={<PlayArrowIcon />}
-                onClick={() => onStartTask && onStartTask(currentTask.task_name, sprintTime)}
+                onClick={() => {
+                  if (!currentTask?.task_name) return
+                  const taskRole = currentTask.role || 'work'
+                  if (onStartTask) {
+                    onStartTask(currentTask.task_name, taskRole, sprintTime)
+                  } else {
+                    api
+                      .startTask({
+                        task_name: currentTask.task_name,
+                        role: taskRole,
+                        target_duration: sprintTime,
+                      })
+                      .then(() => {
+                        navigate(
+                          `/timer?task=${encodeURIComponent(currentTask.task_name)}&role=${encodeURIComponent(
+                            taskRole
+                          )}&target=${sprintTime}`
+                        )
+                      })
+                      .catch((e) => console.error('Failed to start task', e))
+                  }
+                }}
                 sx={{
                   bgcolor: '#7C3AED',
                   color: '#FFFFFF',

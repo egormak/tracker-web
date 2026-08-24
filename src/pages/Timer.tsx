@@ -47,7 +47,7 @@ interface TaskTimerItemProps {
   onStop: (taskName: string, autoBlocked?: boolean) => void
   onPause: (taskName: string) => void
   onResume: (taskName: string) => void
-  onAdjustDuration?: (deltaMin: number) => void
+  onAdjustDuration?: (taskName: string, deltaMin: number) => void
   serverTimeOffset?: number
 }
 
@@ -201,14 +201,14 @@ function TaskTimerItem({ task, onStop, onPause, onResume, onAdjustDuration, serv
                 size="small"
                 icon={<RemoveRoundedIcon fontSize="small" />}
                 label="5 мин"
-                onClick={() => onAdjustDuration(-5)}
+                onClick={() => onAdjustDuration(task.task_name, -5)}
                 sx={{ cursor: 'pointer', bgcolor: 'rgba(255, 255, 255, 0.05)', color: DESIGN_TOKENS.textSecondary }}
               />
               <Chip
                 size="small"
                 icon={<AddRoundedIcon fontSize="small" />}
                 label="5 мин"
-                onClick={() => onAdjustDuration(5)}
+                onClick={() => onAdjustDuration(task.task_name, 5)}
                 sx={{ cursor: 'pointer', bgcolor: 'rgba(255, 255, 255, 0.05)', color: DESIGN_TOKENS.textSecondary }}
               />
             </Stack>
@@ -419,14 +419,21 @@ export default function Timer() {
     }
   }
 
-  const handleAdjustRunningDuration = (deltaMin: number) => {
-    setRunningTasks((prev) =>
-      prev.map((t) => {
-        const cur = t.target_duration || targetMinutes
-        const next = Math.max(5, cur + deltaMin)
-        return { ...t, target_duration: next }
-      })
-    )
+  const handleAdjustRunningDuration = async (tName: string, deltaMin: number) => {
+    setError(null)
+    try {
+      const r = await api.adjustRunningTask(tName, deltaMin)
+      setRunningTasks((prev) => prev.map((t) => (t.task_name === tName ? r.data : t)))
+    } catch (e: any) {
+      setRunningTasks((prev) =>
+        prev.map((t) => {
+          if (t.task_name !== tName) return t
+          const cur = t.target_duration || targetMinutes
+          const next = Math.max(5, cur + deltaMin)
+          return { ...t, target_duration: next }
+        })
+      )
+    }
   }
 
   // Hotkeys handling
