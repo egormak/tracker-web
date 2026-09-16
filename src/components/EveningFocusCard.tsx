@@ -19,6 +19,7 @@ import NightlightRoundIcon from '@mui/icons-material/NightlightRound'
 import FlashOnRoundedIcon from '@mui/icons-material/FlashOnRounded'
 import { api, EveningFocusResponse, EveningFocusCandidate } from '../api/client'
 import { ROLE_THEMES, DESIGN_TOKENS } from '../constants/themeColors'
+import { saveStoredCombo } from '../pages/Timer'
 
 interface EveningFocusCardProps {
   onStartTask?: (taskName: string, role: string, duration?: number) => void
@@ -92,6 +93,7 @@ export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask 
       role: c.role || 'work',
       duration: comboDuration,
     }))
+    saveStoredCombo(comboPayload, 0)
     navigate(`/timer?combo=${encodeURIComponent(JSON.stringify(comboPayload))}`)
   }
 

@@ -34,10 +34,58 @@ import { ROLE_THEMES, ROLE_TAGS, TIMER_PRESETS, DESIGN_TOKENS } from '../constan
 type SequenceMode = 'none' | 'percent' | 'backlog' | 'evening'
 type TimerMode = 'pomodoro' | 'free'
 
-interface ComboItem {
+export interface ComboItem {
   taskName: string
   role: string
   duration: number
+}
+
+export const COMBO_STORAGE_KEY = 'tracker_evening_combo_session'
+
+export interface StoredComboSession {
+  queue: ComboItem[]
+  currentIndex: number
+  updatedAt: number
+}
+
+export function loadStoredCombo(): { queue: ComboItem[]; currentIndex: number } | null {
+  try {
+    const raw = localStorage.getItem(COMBO_STORAGE_KEY)
+    if (!raw) return null
+    const parsed: StoredComboSession = JSON.parse(raw)
+    // Expire combo sessions older than 4 hours
+    if (Date.now() - parsed.updatedAt > 4 * 60 * 60 * 1000) {
+      localStorage.removeItem(COMBO_STORAGE_KEY)
+      return null
+    }
+    if (Array.isArray(parsed.queue) && parsed.queue.length > 0 && parsed.currentIndex < parsed.queue.length) {
+      return { queue: parsed.queue, currentIndex: parsed.currentIndex }
+    }
+  } catch (e) {
+    console.warn('Failed to load combo session from localStorage', e)
+  }
+  return null
+}
+
+export function saveStoredCombo(queue: ComboItem[], currentIndex: number) {
+  try {
+    const session: StoredComboSession = {
+      queue,
+      currentIndex,
+      updatedAt: Date.now(),
+    }
+    localStorage.setItem(COMBO_STORAGE_KEY, JSON.stringify(session))
+  } catch (e) {
+    console.warn('Failed to save combo session to localStorage', e)
+  }
+}
+
+export function clearStoredCombo() {
+  try {
+    localStorage.removeItem(COMBO_STORAGE_KEY)
+  } catch (e) {
+    // ignore
+  }
 }
 
 interface NextTaskInfo {
@@ -55,9 +103,10 @@ interface TaskTimerItemProps {
   onResume: (taskName: string) => void
   onAdjustDuration?: (taskName: string, deltaMin: number) => void
   serverTimeOffset?: number
+  isComboActive?: boolean
 }
 
-function TaskTimerItem({ task, onStop, onPause, onResume, onAdjustDuration, serverTimeOffset }: TaskTimerItemProps) {
+function TaskTimerItem({ task, onStop, onPause, onResume, onAdjustDuration, serverTimeOffset, isComboActive }: TaskTimerItemProps) {
   const [elapsed, setElapsed] = useState(0)
   const autoStoppedRef = useRef(false)
 
@@ -255,22 +304,41 @@ function TaskTimerItem({ task, onStop, onPause, onResume, onAdjustDuration, serv
               </Button>
             )}
 
-            <Button
-              variant="contained"
-              fullWidth
-              color="error"
-              onClick={() => onStop(task.task_name)}
-              startIcon={<StopRoundedIcon />}
-              sx={{
-                py: 1.2,
-                bgcolor: 'rgba(239, 68, 68, 0.2)',
-                color: '#F87171',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.3)', borderColor: '#EF4444' },
-              }}
-            >
-              Завершить
-            </Button>
+            {isComboActive ? (
+              <Button
+                variant="contained"
+                fullWidth
+                onClick={() => onStop(task.task_name, true)}
+                startIcon={<FlashOnRoundedIcon />}
+                sx={{
+                  py: 1.2,
+                  bgcolor: '#EC4899',
+                  color: '#FFFFFF',
+                  fontWeight: 700,
+                  boxShadow: '0 4px 16px rgba(236, 72, 153, 0.35)',
+                  '&:hover': { bgcolor: '#DB2777' },
+                }}
+              >
+                Завершить спринт и далее ⏭
+              </Button>
+            ) : (
+              <Button
+                variant="contained"
+                fullWidth
+                color="error"
+                onClick={() => onStop(task.task_name)}
+                startIcon={<StopRoundedIcon />}
+                sx={{
+                  py: 1.2,
+                  bgcolor: 'rgba(239, 68, 68, 0.2)',
+                  color: '#F87171',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.3)', borderColor: '#EF4444' },
+                }}
+              >
+                Завершить
+              </Button>
+            )}
           </Stack>
         </Stack>
       </Stack>
@@ -308,15 +376,21 @@ export default function Timer() {
   const [sequenceMode, setSequenceMode] = useState<SequenceMode>('none')
   const [nextTaskInfo, setNextTaskInfo] = useState<NextTaskInfo | null>(null)
 
-  const [comboQueue, setComboQueue] = useState<ComboItem[]>([])
-  const [comboIndex, setComboIndex] = useState<number>(0)
-  const comboQueueRef = useRef<ComboItem[]>([])
+  const [comboQueue, setComboQueue] = useState<ComboItem[]>(() => {
+    const stored = loadStoredCombo()
+    return stored ? stored.queue : []
+  })
+  const [comboIndex, setComboIndex] = useState<number>(() => {
+    const stored = loadStoredCombo()
+    return stored ? stored.currentIndex : 0
+  })
+  const comboQueueRef = useRef<ComboItem[]>(comboQueue)
   comboQueueRef.current = comboQueue
-  const comboIndexRef = useRef<number>(0)
+  const comboIndexRef = useRef<number>(comboIndex)
   comboIndexRef.current = comboIndex
   const lastHandledComboIndexRef = useRef<number>(-1)
 
-  const advanceComboStepRef = useRef<(taskName: string) => void>()
+  const advanceComboStepRef = useRef<(taskName?: string, force?: boolean) => Promise<void>>()
 
   const handleServerAutoStop = useCallback((tName: string, reason?: string) => {
     soundSynth.playComplete()
@@ -329,23 +403,57 @@ export default function Timer() {
     } else {
       setMsg(`Задача '${tName}' завершена`)
     }
-    advanceComboStepRef.current?.(tName)
+    if (comboQueueRef.current.length > 0) {
+      advanceComboStepRef.current?.(tName)
+    }
   }, [])
 
   const { runningTasks, setRunningTasks, isConnected, serverTimeOffset } = useTimerSync(handleServerAutoStop)
 
+  const startComboStep = useCallback(
+    async (stepIndex: number) => {
+      const queue = comboQueueRef.current
+      if (!queue || stepIndex < 0 || stepIndex >= queue.length) return
+      const stepTask = queue[stepIndex]
+
+      setComboIndex(stepIndex)
+      comboIndexRef.current = stepIndex
+      saveStoredCombo(queue, stepIndex)
+      lastHandledComboIndexRef.current = -1
+
+      try {
+        const res = await api.startTask({
+          task_name: stepTask.taskName,
+          role: stepTask.role || 'work',
+          target_duration: stepTask.duration,
+        })
+        soundSynth.playStart()
+        setRunningTasks((prev) => [...prev.filter((t) => t.task_name !== stepTask.taskName), res.data])
+        setMsg(`⚡️ Запущен шаг ${stepIndex + 1} из ${queue.length}: ${stepTask.taskName} (${stepTask.duration} мин)`)
+      } catch (err: any) {
+        console.error('Failed to start combo step', err)
+        setError(`Ошибка запуска шага комбо: ${err.message || err}`)
+      }
+    },
+    [setRunningTasks]
+  )
+
   const advanceComboStep = useCallback(
-    async (finishedTaskName: string) => {
+    async (finishedTaskName?: string, force: boolean = false) => {
       const queue = comboQueueRef.current
       const currentIndex = comboIndexRef.current
       if (!queue || queue.length === 0 || currentIndex >= queue.length) return
 
       const currentTask = queue[currentIndex]
-      if (currentTask.taskName.trim().toLowerCase() !== finishedTaskName.trim().toLowerCase()) {
+      if (
+        !force &&
+        finishedTaskName &&
+        currentTask.taskName.trim().toLowerCase() !== finishedTaskName.trim().toLowerCase()
+      ) {
         return
       }
 
-      if (lastHandledComboIndexRef.current === currentIndex) {
+      if (!force && lastHandledComboIndexRef.current === currentIndex) {
         return
       }
       lastHandledComboIndexRef.current = currentIndex
@@ -354,34 +462,45 @@ export default function Timer() {
 
       if (currentIndex + 1 < queue.length) {
         const nextIndex = currentIndex + 1
-        const nextTask = queue[nextIndex]
-        setComboIndex(nextIndex)
-        comboIndexRef.current = nextIndex
-
-        try {
-          const res = await api.startTask({
-            task_name: nextTask.taskName,
-            role: nextTask.role || 'work',
-            target_duration: nextTask.duration,
-          })
-          soundSynth.playStart()
-          setRunningTasks((prev) => [...prev.filter((t) => t.task_name !== nextTask.taskName), res.data])
-          setMsg(`🎉 Шаг ${currentIndex + 1} завершен! Запущен следующий спринт: ${nextTask.taskName}`)
-        } catch (err: any) {
-          console.error('Failed to start next combo step', err)
-          setError(`Ошибка запуска следующего шага комбо: ${err.message || err}`)
-        }
+        await startComboStep(nextIndex)
       } else {
         const totalSteps = queue.length
+        clearStoredCombo()
         setComboQueue([])
         setComboIndex(0)
         comboIndexRef.current = 0
-        setMsg(`🎉 Комбо-цепочка из ${totalSteps} спринтов успешно завершена!`)
+        lastHandledComboIndexRef.current = -1
+        setMsg(`🎉 Комбо-цепочка из ${totalSteps} спринтов успешно завершена! Все дефициты закрыты.`)
       }
     },
-    [setRunningTasks]
+    [startComboStep]
   )
   advanceComboStepRef.current = advanceComboStep
+
+  const handleSkipComboStep = useCallback(async () => {
+    const queue = comboQueueRef.current
+    const currentIndex = comboIndexRef.current
+    if (!queue || currentIndex >= queue.length) return
+
+    const currentTask = queue[currentIndex]
+    try {
+      await api.stopTask({ task_name: currentTask.taskName })
+    } catch (e) {
+      // ignore if already stopped
+    }
+    setRunningTasks((prev) => prev.filter((t) => t.task_name !== currentTask.taskName))
+    await advanceComboStep(currentTask.taskName, true)
+  }, [advanceComboStep, setRunningTasks])
+
+  const handleAbortCombo = useCallback(() => {
+    clearStoredCombo()
+    setComboQueue([])
+    setComboIndex(0)
+    comboQueueRef.current = []
+    comboIndexRef.current = 0
+    lastHandledComboIndexRef.current = -1
+    setMsg('Комбо-цепочка отменена')
+  }, [])
 
   // Parse combo search parameter on mount
   const comboInitializedRef = useRef(false)
@@ -392,13 +511,14 @@ export default function Timer() {
       try {
         const parsed: ComboItem[] = JSON.parse(comboParam)
         if (Array.isArray(parsed) && parsed.length > 0) {
+          saveStoredCombo(parsed, 0)
           setComboQueue(parsed)
           setComboIndex(0)
           comboQueueRef.current = parsed
           comboIndexRef.current = 0
           lastHandledComboIndexRef.current = -1
 
-          // Strip 'combo' from URL parameters to prevent restart on page reload
+          // Strip 'combo' from URL parameters to keep URL clean
           setSearchParams(
             (prev) => {
               const next = new URLSearchParams(prev)
@@ -408,27 +528,13 @@ export default function Timer() {
             { replace: true }
           )
 
-          const first = parsed[0]
-          api
-            .startTask({
-              task_name: first.taskName,
-              role: first.role || 'work',
-              target_duration: first.duration,
-            })
-            .then((res) => {
-              soundSynth.playStart()
-              setRunningTasks((prev) => [...prev.filter((t) => t.task_name !== first.taskName), res.data])
-              setMsg(`⚡️ Комбо-цепочка запущена! Шаг 1 из ${parsed.length}: ${first.taskName}`)
-            })
-            .catch((err) => {
-              console.error('Failed to auto-start first combo step', err)
-            })
+          startComboStep(0)
         }
       } catch (e) {
         console.error('Failed to parse combo parameter', e)
       }
     }
-  }, [searchParams, setSearchParams, setRunningTasks])
+  }, [searchParams, setSearchParams, startComboStep])
 
   // Load available tasks
   useEffect(() => {
@@ -497,19 +603,25 @@ export default function Timer() {
     setError(null)
     try {
       await api.stopTask({ task_name: tName })
-      setRunningTasks((prev) => prev.filter((t) => t.task_name !== tName))
-      if (autoBlocked) {
-        soundSynth.playComplete()
-        setMsg(`🎉 Спринт завершен и сохранен для '${tName}'!`)
-        if (comboQueueRef.current.length > 0) {
-          advanceComboStep(tName)
-        }
-      } else {
-        soundSynth.playPause()
-        setMsg(`Задача '${tName}' остановлена и сохранена`)
-      }
     } catch (e: any) {
-      setError(e.message)
+      // If error is "no running task found", it means server watchdog or another process already stopped it.
+      if (!e.message?.toLowerCase().includes('no running task')) {
+        setError(e.message)
+      }
+    }
+
+    setRunningTasks((prev) => prev.filter((t) => t.task_name !== tName))
+
+    const isCombo = comboQueueRef.current.length > 0
+    if (autoBlocked || isCombo) {
+      soundSynth.playComplete()
+      setMsg(`🎉 Спринт завершен для '${tName}'!`)
+      if (isCombo) {
+        await advanceComboStep(tName)
+      }
+    } else {
+      soundSynth.playPause()
+      setMsg(`Задача '${tName}' остановлена и сохранена`)
     }
   }
 
@@ -765,18 +877,56 @@ export default function Timer() {
                   </Stack>
                 </Box>
 
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ alignSelf: { xs: 'flex-end', sm: 'center' } }}>
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ alignSelf: { xs: 'flex-end', sm: 'center' }, flexWrap: 'wrap', gap: 1 }}>
+                  {!runningTasks.some((t) => t.task_name.trim().toLowerCase() === comboQueue[comboIndex]?.taskName.trim().toLowerCase()) ? (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      startIcon={<PlayArrowRoundedIcon />}
+                      onClick={() => startComboStep(comboIndex)}
+                      sx={{
+                        bgcolor: '#EC4899',
+                        color: '#FFFFFF',
+                        fontWeight: 700,
+                        fontSize: '0.75rem',
+                        '&:hover': { bgcolor: '#DB2777' },
+                      }}
+                    >
+                      ▶️ Запустить шаг {comboIndex + 1}
+                    </Button>
+                  ) : (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      startIcon={<FlashOnRoundedIcon />}
+                      onClick={() => handleStop(comboQueue[comboIndex].taskName, true)}
+                      sx={{
+                        bgcolor: '#EC4899',
+                        color: '#FFFFFF',
+                        fontWeight: 700,
+                        fontSize: '0.75rem',
+                        '&:hover': { bgcolor: '#DB2777' },
+                      }}
+                    >
+                      Завершить шаг ⏭
+                    </Button>
+                  )}
                   <Button
                     size="small"
                     variant="outlined"
-                    onClick={() => {
-                      setComboQueue([])
-                      setComboIndex(0)
-                      comboQueueRef.current = []
-                      comboIndexRef.current = 0
-                      lastHandledComboIndexRef.current = -1
-                      setMsg('Комбо-цепочка отменена')
+                    onClick={handleSkipComboStep}
+                    sx={{
+                      borderColor: 'rgba(255, 255, 255, 0.2)',
+                      color: DESIGN_TOKENS.textSecondary,
+                      fontSize: '0.75rem',
                     }}
+                  >
+                    Пропустить
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={handleAbortCombo}
                     sx={{
                       borderColor: 'rgba(239, 68, 68, 0.4)',
                       color: '#F87171',
@@ -784,7 +934,7 @@ export default function Timer() {
                       '&:hover': { borderColor: '#EF4444', bgcolor: 'rgba(239, 68, 68, 0.1)' },
                     }}
                   >
-                    Прервать комбо
+                    Прервать
                   </Button>
                 </Stack>
               </Stack>
@@ -803,8 +953,55 @@ export default function Timer() {
                   onResume={handleResume}
                   onAdjustDuration={handleAdjustRunningDuration}
                   serverTimeOffset={serverTimeOffset}
+                  isComboActive={comboQueue.length > 0}
                 />
               ))
+            ) : comboQueue.length > 0 && comboQueue[comboIndex] ? (
+              <Box
+                sx={{
+                  py: 5,
+                  px: 3,
+                  textAlign: 'center',
+                  bgcolor: 'rgba(236, 72, 153, 0.08)',
+                  borderRadius: 3.5,
+                  border: '1px dashed rgba(236, 72, 153, 0.4)',
+                }}
+              >
+                <Typography variant="h6" fontWeight={700} sx={{ color: '#FDF2F8', mb: 1 }}>
+                  ⚡️ Шаг {comboIndex + 1} из {comboQueue.length} готов к запуску
+                </Typography>
+                <Typography variant="body2" sx={{ color: DESIGN_TOKENS.textSecondary, mb: 2.5 }}>
+                  Задача: <b>{comboQueue[comboIndex].taskName}</b> ({comboQueue[comboIndex].duration} мин)
+                </Typography>
+                <Stack direction="row" spacing={1.5} justifyContent="center">
+                  <Button
+                    variant="contained"
+                    startIcon={<PlayArrowRoundedIcon />}
+                    onClick={() => startComboStep(comboIndex)}
+                    sx={{
+                      py: 1,
+                      px: 3,
+                      bgcolor: '#EC4899',
+                      color: '#FFFFFF',
+                      fontWeight: 700,
+                      boxShadow: '0 4px 16px rgba(236, 72, 153, 0.35)',
+                      '&:hover': { bgcolor: '#DB2777' },
+                    }}
+                  >
+                    Запустить спринт ({comboQueue[comboIndex].duration} мин)
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={handleSkipComboStep}
+                    sx={{
+                      borderColor: 'rgba(255, 255, 255, 0.2)',
+                      color: DESIGN_TOKENS.textSecondary,
+                    }}
+                  >
+                    Пропустить шаг
+                  </Button>
+                </Stack>
+              </Box>
             ) : (
               <Box
                 sx={{
