@@ -36,7 +36,7 @@ export default function Plan() {
   const rotate = async () => {
     setMsg(null); setError(null)
     try {
-      await api.changeLegacyPlanPercent()
+      await api.rotatePlanPercent()
       await load()
       setMsg('Rotated plan percent group')
     } catch (e: any) { setError(e.message) }

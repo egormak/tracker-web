@@ -22,7 +22,7 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
 
 import { useSearchParams } from 'react-router-dom'
-import { api, RunningTask, TaskResult } from '../api/client'
+import { api, RunningTask, TaskResult, PlanPercentResponse } from '../api/client'
 import Alert from '../components/Alert'
 import Card from '../components/Card'
 import { CircularTimerCanvas } from '../components/canvas/CircularTimerCanvas'
@@ -83,6 +83,71 @@ export function saveStoredCombo(queue: ComboItem[], currentIndex: number) {
 export function clearStoredCombo() {
   try {
     localStorage.removeItem(COMBO_STORAGE_KEY)
+  } catch (e) {
+    // ignore
+  }
+}
+
+export const BATCH_STORAGE_KEY = 'tracker_batch_session'
+
+export interface StoredBatchSession {
+  totalMinutes: number
+  remainingMinutes: number
+  step: number
+  currentTaskName: string
+  currentTaskDuration: number
+  currentRole?: string
+  updatedAt: number
+}
+
+export function loadStoredBatch(): {
+  totalMinutes: number
+  remainingMinutes: number
+  step: number
+  currentTaskName: string
+  currentTaskDuration: number
+  currentRole?: string
+} | null {
+  try {
+    const raw = localStorage.getItem(BATCH_STORAGE_KEY)
+    if (!raw) return null
+    const parsed: StoredBatchSession = JSON.parse(raw)
+    // Expire batch sessions older than 4 hours
+    if (Date.now() - parsed.updatedAt > 4 * 60 * 60 * 1000) {
+      localStorage.removeItem(BATCH_STORAGE_KEY)
+      return null
+    }
+    if (parsed.remainingMinutes > 0 && parsed.currentTaskName) {
+      return parsed
+    }
+  } catch (e) {
+    console.warn('Failed to load batch session from localStorage', e)
+  }
+  return null
+}
+
+export function saveStoredBatch(session: {
+  totalMinutes: number
+  remainingMinutes: number
+  step: number
+  currentTaskName: string
+  currentTaskDuration: number
+  currentRole?: string
+}) {
+  try {
+    const stored: StoredBatchSession = {
+      ...session,
+      updatedAt: Date.now(),
+    }
+    localStorage.setItem(BATCH_STORAGE_KEY, JSON.stringify(stored))
+  } catch (e) {
+    console.warn('Failed to save batch session to localStorage', e)
+  }
+}
+
+export function clearStoredBatch() {
+  try {
+    localStorage.removeItem(BATCH_STORAGE_KEY)
   } catch (e) {
     // ignore
   }
@@ -392,6 +457,19 @@ export default function Timer() {
 
   const advanceComboStepRef = useRef<(taskName?: string, force?: boolean) => Promise<void>>()
 
+  const [batchSession, setBatchSession] = useState<{
+    totalMinutes: number
+    remainingMinutes: number
+    step: number
+    currentTaskName: string
+    currentTaskDuration: number
+    currentRole?: string
+  } | null>(() => loadStoredBatch())
+  const batchSessionRef = useRef(batchSession)
+  batchSessionRef.current = batchSession
+  const lastHandledBatchStepRef = useRef<number>(-1)
+  const advanceBatchSessionRef = useRef<(taskName?: string, force?: boolean) => Promise<void>>()
+
   const handleServerAutoStop = useCallback((tName: string, reason?: string) => {
     soundSynth.playComplete()
     if (reason === 'target_reached') {
@@ -405,6 +483,9 @@ export default function Timer() {
     }
     if (comboQueueRef.current.length > 0) {
       advanceComboStepRef.current?.(tName)
+    }
+    if (batchSessionRef.current) {
+      advanceBatchSessionRef.current?.(tName)
     }
   }, [])
 
@@ -613,11 +694,14 @@ export default function Timer() {
     setRunningTasks((prev) => prev.filter((t) => t.task_name !== tName))
 
     const isCombo = comboQueueRef.current.length > 0
-    if (autoBlocked || isCombo) {
+    const isBatch = Boolean(batchSessionRef.current)
+    if (autoBlocked || isCombo || isBatch) {
       soundSynth.playComplete()
       setMsg(`🎉 Спринт завершен для '${tName}'!`)
       if (isCombo) {
         await advanceComboStep(tName)
+      } else if (isBatch) {
+        await advanceBatchSession(tName)
       }
     } else {
       soundSynth.playPause()
@@ -680,6 +764,198 @@ export default function Timer() {
     onTogglePlay: togglePlayActive,
     onSelectRole: (newRole) => setRole(newRole),
   })
+
+  const fetchNextTask = async (): Promise<NextTaskInfo | null> => {
+    try {
+      let r: PlanPercentResponse | null = null
+      try {
+        r = await api.getTaskPlanPercentWithSchedule()
+      } catch (err) {
+        console.warn('getTaskPlanPercentWithSchedule failed, falling back to getTaskPlanPercent', err)
+      }
+      if (!r || !r.task_name) {
+        r = await api.getTaskPlanPercent()
+      }
+      if (!r || !r.task_name) {
+        throw new Error('Нет доступных задач по плану')
+      }
+      const tName = r.task_name
+      const taskDef = availableTasks.find((t) => t.name.toLowerCase() === tName.toLowerCase())
+      const tRole = taskDef?.role || 'work'
+      return {
+        taskName: tName,
+        role: tRole,
+        targetDuration: r.time_left > 0 ? r.time_left : (taskDef?.time_duration || 25),
+        sourceDay: r.source_day,
+        percent: r.percent,
+      }
+    } catch (e: any) {
+      setError(e.message || 'Ошибка загрузки задачи по плану')
+      return null
+    }
+  }
+
+  const advanceBatchSession = useCallback(
+    async (finishedTaskName?: string, force: boolean = false) => {
+      const session = batchSessionRef.current
+      if (!session) return
+
+      if (
+        !force &&
+        finishedTaskName &&
+        session.currentTaskName.trim().toLowerCase() !== finishedTaskName.trim().toLowerCase()
+      ) {
+        return
+      }
+
+      if (!force && lastHandledBatchStepRef.current === session.step) {
+        return
+      }
+      lastHandledBatchStepRef.current = session.step
+
+      soundSynth.playComplete()
+
+      const newRemaining = Math.max(0, session.remainingMinutes - session.currentTaskDuration)
+
+      if (newRemaining <= 0) {
+        clearStoredBatch()
+        setBatchSession(null)
+        batchSessionRef.current = null
+        lastHandledBatchStepRef.current = -1
+        setMsg(`🎉 Пакетная сессия ${session.totalMinutes}м полностью выполнена!`)
+        return
+      }
+
+      const nextStep = session.step + 1
+      const nextTaskInfo = await fetchNextTask()
+
+      if (!nextTaskInfo) {
+        const updated = {
+          ...session,
+          remainingMinutes: newRemaining,
+          step: nextStep,
+        }
+        setBatchSession(updated)
+        batchSessionRef.current = updated
+        saveStoredBatch(updated)
+        setMsg(`Пакетная сессия: шаг ${session.step} завершен. Осталось ${newRemaining} мин в пакете.`)
+        return
+      }
+
+      // Clamp targetDuration to min(nextTask.timeLeft, newRemaining)
+      const nextDuration =
+        nextTaskInfo.targetDuration && nextTaskInfo.targetDuration > 0 && nextTaskInfo.targetDuration < newRemaining
+          ? nextTaskInfo.targetDuration
+          : newRemaining
+
+      const updatedSession = {
+        totalMinutes: session.totalMinutes,
+        remainingMinutes: newRemaining,
+        step: nextStep,
+        currentTaskName: nextTaskInfo.taskName,
+        currentTaskDuration: nextDuration,
+        currentRole: nextTaskInfo.role,
+      }
+
+      setBatchSession(updatedSession)
+      batchSessionRef.current = updatedSession
+      saveStoredBatch(updatedSession)
+
+      setTaskName(nextTaskInfo.taskName)
+      setRole((nextTaskInfo.role as 'work' | 'learn' | 'rest') || 'work')
+      setTargetMinutes(nextDuration)
+      setTimerMode('pomodoro')
+
+      setMsg(
+        `Сессия ${session.totalMinutes}м (шаг ${nextStep}: ${nextDuration} мин) готова к запуску: ${nextTaskInfo.taskName}. Осталось в пакете: ${newRemaining} мин.`
+      )
+    },
+    [fetchNextTask]
+  )
+  advanceBatchSessionRef.current = advanceBatchSession
+
+  const startBatchStep = useCallback(async () => {
+    const session = batchSessionRef.current
+    if (!session) return
+
+    const preparedTask: NextTaskInfo = {
+      taskName: session.currentTaskName,
+      role: session.currentRole || role,
+      targetDuration: session.currentTaskDuration,
+    }
+
+    lastHandledBatchStepRef.current = -1
+
+    try {
+      const res = await api.startTask({
+        task_name: preparedTask.taskName,
+        role: preparedTask.role || 'work',
+        target_duration: preparedTask.targetDuration,
+      })
+      soundSynth.playStart()
+      setRunningTasks((prev) => [...prev.filter((t) => t.task_name !== preparedTask.taskName), res.data])
+      setTaskName('')
+      setNextTaskInfo(null)
+      setMsg(
+        `⚡️ Сессия ${session.totalMinutes}м (шаг ${session.step}: ${session.currentTaskDuration} мин) — ${session.currentTaskName}. Осталось в пакете: ${session.remainingMinutes} мин.`
+      )
+    } catch (err: any) {
+      console.error('Failed to start batch step', err)
+      setError(`Ошибка запуска шага сессии: ${err.message || err}`)
+    }
+  }, [role, setRunningTasks])
+
+  const handleAbortBatch = useCallback(() => {
+    clearStoredBatch()
+    setBatchSession(null)
+    batchSessionRef.current = null
+    lastHandledBatchStepRef.current = -1
+    setMsg('Пакетная сессия отменена')
+  }, [])
+
+  const handleBatchSession = async (batchMinutes: number) => {
+    setMsg(null)
+    setError(null)
+    const taskInfo = await fetchNextTask()
+    if (!taskInfo) return
+
+    // Clamp task targetDuration if schedule timeLeft is smaller than batchMinutes
+    const taskDuration =
+      taskInfo.targetDuration && taskInfo.targetDuration > 0 && taskInfo.targetDuration < batchMinutes
+        ? taskInfo.targetDuration
+        : batchMinutes
+
+    const session = {
+      totalMinutes: batchMinutes,
+      remainingMinutes: batchMinutes,
+      step: 1,
+      currentTaskName: taskInfo.taskName,
+      currentTaskDuration: taskDuration,
+      currentRole: taskInfo.role,
+    }
+
+    setBatchSession(session)
+    batchSessionRef.current = session
+    saveStoredBatch(session)
+    lastHandledBatchStepRef.current = -1
+
+    const preparedTask: NextTaskInfo = {
+      ...taskInfo,
+      targetDuration: taskDuration,
+    }
+
+    setTaskName(preparedTask.taskName)
+    setRole((preparedTask.role as 'work' | 'learn' | 'rest') || 'work')
+    setTargetMinutes(taskDuration)
+    setTimerMode('pomodoro')
+
+    if (!runningTasks.some((t) => t.task_name.toLowerCase() === preparedTask.taskName.toLowerCase())) {
+      await handleStart(undefined, preparedTask)
+      setMsg(`⚡️ Сессия ${batchMinutes}м (шаг 1: ${taskDuration} мин) — ${preparedTask.taskName}`)
+    } else {
+      setMsg(`Подготовлена сессия ${batchMinutes}м (шаг 1: ${taskDuration} мин) — ${preparedTask.taskName}`)
+    }
+  }
 
   const fetchingNextRef = useRef(false)
   const fetchNextSequenceTask = async () => {
@@ -941,6 +1217,110 @@ export default function Timer() {
             </Box>
           )}
 
+          {/* Prominent Batch Session Status Banner */}
+          {batchSession && (
+            <Box
+              sx={{
+                mb: 3,
+                p: 2.5,
+                borderRadius: 3,
+                background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(234, 88, 12, 0.2) 100%)',
+                border: '1px solid rgba(245, 158, 11, 0.45)',
+                boxShadow: '0 8px 32px rgba(245, 158, 11, 0.18)',
+                backdropFilter: 'blur(16px)',
+              }}
+            >
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={2}
+                alignItems={{ xs: 'flex-start', sm: 'center' }}
+                justifyContent="space-between"
+              >
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
+                    <FlashOnRoundedIcon sx={{ color: '#FBBF24', fontSize: '1.5rem' }} />
+                    <Typography variant="subtitle1" fontWeight={800} sx={{ color: '#FEF3C7', letterSpacing: '-0.01em' }}>
+                      ⚡️ Пакетная сессия {batchSession.totalMinutes}м (шаг {batchSession.step}: {batchSession.currentTaskDuration} мин) — {batchSession.currentTaskName}
+                    </Typography>
+                  </Stack>
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                    <Chip
+                      size="small"
+                      label={`Шаг ${batchSession.step}`}
+                      sx={{
+                        fontWeight: 700,
+                        fontSize: '0.72rem',
+                        bgcolor: 'rgba(245, 158, 11, 0.25)',
+                        color: '#FDE68A',
+                        border: '1px solid rgba(245, 158, 11, 0.5)',
+                      }}
+                    />
+                    <Chip
+                      size="small"
+                      label={`Осталось в сессии: ${batchSession.remainingMinutes} мин`}
+                      sx={{
+                        fontWeight: 600,
+                        fontSize: '0.72rem',
+                        bgcolor: 'rgba(255, 255, 255, 0.06)',
+                        color: DESIGN_TOKENS.textSecondary,
+                        border: `1px solid ${DESIGN_TOKENS.borderColor}`,
+                      }}
+                    />
+                  </Stack>
+                </Box>
+
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ alignSelf: { xs: 'flex-end', sm: 'center' }, flexWrap: 'wrap', gap: 1 }}>
+                  {!runningTasks.some((t) => t.task_name.trim().toLowerCase() === batchSession.currentTaskName.trim().toLowerCase()) ? (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      startIcon={<PlayArrowRoundedIcon />}
+                      onClick={startBatchStep}
+                      sx={{
+                        bgcolor: '#F59E0B',
+                        color: '#0B0F17',
+                        fontWeight: 700,
+                        fontSize: '0.75rem',
+                        '&:hover': { bgcolor: '#D97706' },
+                      }}
+                    >
+                      ▶️ Запустить шаг {batchSession.step} ({batchSession.currentTaskDuration}м)
+                    </Button>
+                  ) : (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      startIcon={<FlashOnRoundedIcon />}
+                      onClick={() => handleStop(batchSession.currentTaskName, true)}
+                      sx={{
+                        bgcolor: '#F59E0B',
+                        color: '#0B0F17',
+                        fontWeight: 700,
+                        fontSize: '0.75rem',
+                        '&:hover': { bgcolor: '#D97706' },
+                      }}
+                    >
+                      Завершить шаг ⏭
+                    </Button>
+                  )}
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={handleAbortBatch}
+                    sx={{
+                      borderColor: 'rgba(239, 68, 68, 0.4)',
+                      color: '#F87171',
+                      fontSize: '0.75rem',
+                      '&:hover': { borderColor: '#EF4444', bgcolor: 'rgba(239, 68, 68, 0.1)' },
+                    }}
+                  >
+                    Прервать
+                  </Button>
+                </Stack>
+              </Stack>
+            </Box>
+          )}
+
           {/* Active Running Task Display */}
           <Stack spacing={2.5} sx={{ mb: 4 }}>
             {runningTasks.length > 0 ? (
@@ -1002,6 +1382,52 @@ export default function Timer() {
                   </Button>
                 </Stack>
               </Box>
+            ) : batchSession ? (
+              <Box
+                sx={{
+                  py: 5,
+                  px: 3,
+                  textAlign: 'center',
+                  bgcolor: 'rgba(245, 158, 11, 0.08)',
+                  borderRadius: 3.5,
+                  border: '1px dashed rgba(245, 158, 11, 0.4)',
+                }}
+              >
+                <Typography variant="h6" fontWeight={700} sx={{ color: '#FEF3C7', mb: 1 }}>
+                  ⚡️ Пакетная сессия: Шаг {batchSession.step} готов к запуску
+                </Typography>
+                <Typography variant="body2" sx={{ color: DESIGN_TOKENS.textSecondary, mb: 2.5 }}>
+                  Задача: <b>{batchSession.currentTaskName}</b> ({batchSession.currentTaskDuration} мин) &nbsp;|&nbsp; Осталось в сессии: <b>{batchSession.remainingMinutes} мин</b>
+                </Typography>
+                <Stack direction="row" spacing={1.5} justifyContent="center">
+                  <Button
+                    variant="contained"
+                    startIcon={<PlayArrowRoundedIcon />}
+                    onClick={startBatchStep}
+                    sx={{
+                      py: 1,
+                      px: 3,
+                      bgcolor: '#F59E0B',
+                      color: '#0B0F17',
+                      fontWeight: 700,
+                      boxShadow: '0 4px 16px rgba(245, 158, 11, 0.35)',
+                      '&:hover': { bgcolor: '#D97706' },
+                    }}
+                  >
+                    Запустить шаг {batchSession.step} ({batchSession.currentTaskDuration} мин)
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={handleAbortBatch}
+                    sx={{
+                      borderColor: 'rgba(239, 68, 68, 0.4)',
+                      color: '#F87171',
+                    }}
+                  >
+                    Прервать
+                  </Button>
+                </Stack>
+              </Box>
             ) : (
               <Box
                 sx={{
@@ -1026,9 +1452,48 @@ export default function Timer() {
           <Divider sx={{ my: 3.5, borderColor: DESIGN_TOKENS.borderColor }} />
 
           {/* Gamified Next Task or Manual Start Form */}
-          <Typography variant="h6" fontWeight={800} sx={{ mb: 2, letterSpacing: '-0.01em' }}>
-            Запустить сессию
-          </Typography>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            justifyContent="space-between"
+            alignItems={{ xs: 'flex-start', sm: 'center' }}
+            spacing={1.5}
+            sx={{ mb: 2 }}
+          >
+            <Typography variant="h6" fontWeight={800} sx={{ letterSpacing: '-0.01em' }}>
+              Запустить сессию
+            </Typography>
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted, fontWeight: 600 }}>
+                Пакет (план):
+              </Typography>
+              {[30, 45].map((mins) => (
+                <Button
+                  key={`header-batch-${mins}`}
+                  size="small"
+                  variant="outlined"
+                  startIcon={<FlashOnRoundedIcon sx={{ color: '#FBBF24 !important', fontSize: '1rem !important' }} />}
+                  onClick={() => handleBatchSession(mins)}
+                  sx={{
+                    borderColor: 'rgba(245, 158, 11, 0.35)',
+                    color: '#FBBF24',
+                    fontWeight: 700,
+                    fontSize: '0.75rem',
+                    textTransform: 'none',
+                    py: 0.3,
+                    px: 1.2,
+                    borderRadius: 2,
+                    bgcolor: 'rgba(245, 158, 11, 0.08)',
+                    '&:hover': {
+                      borderColor: '#FCD34D',
+                      bgcolor: 'rgba(245, 158, 11, 0.18)',
+                    },
+                  }}
+                >
+                  ⚡️ Сессия {mins}м
+                </Button>
+              ))}
+            </Stack>
+          </Stack>
 
           {nextTaskInfo && sequenceMode !== 'none' ? (
             <Box
@@ -1176,6 +1641,42 @@ export default function Timer() {
                     />
                   </Stack>
                 )}
+              </Stack>
+
+              {/* Batch Session Presets (Phase 4) */}
+              <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
+                <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted, fontWeight: 600 }}>
+                  Пакетная сессия:
+                </Typography>
+                {[30, 45].map((mins) => (
+                  <Button
+                    key={`batch-btn-${mins}`}
+                    size="small"
+                    variant="outlined"
+                    startIcon={<FlashOnRoundedIcon sx={{ color: '#FBBF24 !important', fontSize: '1rem !important' }} />}
+                    onClick={() => handleBatchSession(mins)}
+                    sx={{
+                      borderColor: 'rgba(245, 158, 11, 0.4)',
+                      color: '#FBBF24',
+                      fontWeight: 700,
+                      fontSize: '0.78rem',
+                      textTransform: 'none',
+                      py: 0.4,
+                      px: 1.4,
+                      borderRadius: 2,
+                      bgcolor: 'rgba(245, 158, 11, 0.08)',
+                      backdropFilter: 'blur(8px)',
+                      boxShadow: '0 2px 8px rgba(245, 158, 11, 0.1)',
+                      '&:hover': {
+                        borderColor: '#FCD34D',
+                        bgcolor: 'rgba(245, 158, 11, 0.2)',
+                        boxShadow: '0 4px 14px rgba(245, 158, 11, 0.25)',
+                      },
+                    }}
+                  >
+                    ⚡️ Сессия {mins}м
+                  </Button>
+                ))}
               </Stack>
 
               {/* Task Name and Autocomplete */}

@@ -219,6 +219,7 @@ export interface TaskRecord {
 // API wrappers
 export const api = {
   // Statistics
+  getDashboardState: () => request<DashboardStateResponse>('GET', '/api/v1/dashboard/state'),
   getStatsDoneToday: () => request<TaskResult[]>('GET', '/api/v1/stats/done/today'),
   getStatsTasksToday: () => request<TaskResult[]>('GET', '/api/v1/stats/tasks/today'),
   getWeeklyStats: () => request<WeeklyStatsResponse>('GET', '/api/v1/stats/weekly'),
@@ -232,7 +233,6 @@ export const api = {
   getTaskPlanPercentWithSchedule: (taskName?: string) => request<PlanPercentResponse>('GET', `/api/v1/task/plan/percent/schedule${taskName ? `?task_name=${encodeURIComponent(taskName)}` : ''}`),
   getPlanPercents: () => request<PlanPercentsResponse>('GET', '/api/v1/manage/plan-percents'),
   rotatePlanPercent: () => request<SuccessResponse>('POST', '/api/v1/task/plan/rotate'),
-  changeLegacyPlanPercent: () => request<SuccessResponse>('GET', '/api/v1/task/plan-percent/change'),
   setProcents: (procents: number[], role_name?: string) =>
     request<SuccessResponse>('POST', '/api/v1/manage/procents', { procents, role_name }),
   removePlanPercent: (group: PlanPercentGroup, value: number) =>
@@ -246,6 +246,7 @@ export const api = {
   restGet: () => request<RestTimeResponse>('GET', '/api/v1/rest/get'),
   restAdd: (payload: RestRecordRequest) => request<SuccessResponse>('POST', '/api/v1/rest/add', payload),
   restSpend: (payload: RestRecordRequest) => request<SuccessResponse>('POST', '/api/v1/rest/spend', payload),
+  restReset: () => request<SuccessResponse>('POST', '/api/v1/rest/reset'),
 
   // Manage
   createTask: (payload: CreateTaskRequest) => request<SuccessResponse>('POST', '/api/v1/manage/task/create', payload),
@@ -311,5 +312,15 @@ export interface EveningFocusResponse {
   candidates: EveningFocusCandidate[]
   sprint_time: number
   rest_pool: number
+}
+
+export interface DashboardStateResponse {
+  running_task: RunningTask | null
+  today_tasks: TaskResult[]
+  rest_pool: number
+  evening_focus?: EveningFocusResponse
+  total_planned: number
+  total_done: number
+  completion_pct: number
 }
 
