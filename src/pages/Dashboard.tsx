@@ -45,6 +45,7 @@ import Card from '../components/Card'
 import Progress from '../components/Progress'
 import { EveningFocusCard } from '../components/EveningFocusCard'
 import { TodayTaskProgressCard } from '../components/TodayTaskProgressCard'
+import { RampBadge } from '../components/RampBadge'
 import { formatRestMinutes } from '../utils/format'
 import { ROLE_COLORS, ROLE_THEMES, DESIGN_TOKENS } from '../constants/themeColors'
 import { Timeline24hCanvas, TimelineSession } from '../components/canvas/Timeline24hCanvas'
@@ -363,10 +364,19 @@ export default function Dashboard() {
   return (
     <Box sx={{ width: '100%' }}>
       {/* Demo Day Switcher & Banner */}
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2.5 }}>
-        <Typography variant="body2" sx={{ color: DESIGN_TOKENS.textMuted }}>
-          Интерактивный дашборд TimeFlow Canvas
-        </Typography>
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        justifyContent="space-between"
+        alignItems={{ xs: 'flex-start', sm: 'center' }}
+        spacing={1.5}
+        sx={{ mb: 2.5 }}
+      >
+        <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
+          <Typography variant="body2" sx={{ color: DESIGN_TOKENS.textMuted }}>
+            Интерактивный дашборд TimeFlow Canvas
+          </Typography>
+          <RampBadge />
+        </Stack>
         <Button
           size="small"
           variant={isDemoMode ? 'contained' : 'outlined'}

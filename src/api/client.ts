@@ -79,6 +79,24 @@ export interface RecordsSummary {
   all: Record<string, number>
 }
 
+// Linear Warm-Up Ramp (Warm-Up Ladder 2.0)
+export interface RampConfig {
+  cap_minutes: number
+  enabled_roles: string[]
+  enabled_tasks: string[]
+  excluded_tasks: string[]
+  default_rest_fallback: number
+}
+
+export interface RampStatus {
+  current_step: number
+  cap_minutes: number
+  is_capped: boolean
+  today_focus_minutes: number
+  date: string
+  config: RampConfig
+}
+
 export interface WeeklyStatsDay {
   day: string
   date: string
@@ -295,6 +313,13 @@ export const api = {
     request<{ status: string; data: EveningFocusResponse }>('GET', `/api/v1/mode/evening-focus?${category ? `category=${encodeURIComponent(category)}&` : ''}${time ? `time=${time}` : ''}`),
   skipEveningFocus: (taskName: string, category?: string, time?: number) =>
     request<{ status: string; data: EveningFocusResponse }>('POST', `/api/v1/mode/evening-focus/skip?${category ? `category=${encodeURIComponent(category)}&` : ''}${time ? `time=${time}` : ''}`, { task_name: taskName }),
+
+  // Linear Warm-Up Ramp
+  getRampStatus: () => request<RampStatus>('GET', '/api/v1/ramp/status'),
+  resetRamp: () => request<RampStatus>('POST', '/api/v1/ramp/reset'),
+  advanceRamp: () => request<RampStatus>('POST', '/api/v1/ramp/advance'),
+  getRampConfig: () => request<RampConfig>('GET', '/api/v1/ramp/config'),
+  updateRampConfig: (config: RampConfig) => request<RampStatus>('PUT', '/api/v1/ramp/config', config),
 }
 
 export interface EveningFocusCandidate {

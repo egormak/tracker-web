@@ -21,6 +21,7 @@ import { ReactNode, useState, useEffect } from 'react'
 import { Link as RouterLink, useMatch, useResolvedPath } from 'react-router-dom'
 import { ROLE_COLORS, DESIGN_TOKENS } from '../constants/themeColors'
 import { soundSynth } from '../utils/audio'
+import { RampBadge } from './RampBadge'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: <DashboardOutlinedIcon fontSize="small" />, end: true },
@@ -105,12 +106,16 @@ export default function Header() {
               <NavItemButton key={item.to} {...item} />
             ))}
 
+            <Box sx={{ ml: 1 }}>
+              <RampBadge />
+            </Box>
+
             <Tooltip title={soundOn ? 'Звук включен (клик для выключения)' : 'Звук выключен (клик для включения)'}>
               <IconButton
                 size="small"
                 onClick={handleToggleSound}
                 sx={{
-                  ml: 1,
+                  ml: 0.5,
                   color: soundOn ? ROLE_COLORS.work : DESIGN_TOKENS.textMuted,
                   bgcolor: soundOn ? 'rgba(255, 107, 74, 0.12)' : 'rgba(255, 255, 255, 0.05)',
                   border: `1px solid ${soundOn ? 'rgba(255, 107, 74, 0.3)' : DESIGN_TOKENS.borderColor}`,
