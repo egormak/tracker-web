@@ -111,10 +111,8 @@ export default function App() {
         pb: { xs: 8, md: 0 },
       }}
     >
-      {/* Top Header shown only on Desktop */}
-      <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-        <Header />
-      </Box>
+      {/* Top Header shown on Desktop and Mobile */}
+      <Header />
 
       {/* Main content container */}
       <Container sx={{ pt: { xs: 2, md: 3 }, pb: 6, px: { xs: 1.5, sm: 3 } }}>

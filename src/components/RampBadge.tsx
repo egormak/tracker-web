@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
@@ -20,6 +20,7 @@ export interface RampBadgeProps {
   initialStatus?: RampStatus | null
   compact?: boolean
   onStatusChange?: (status: RampStatus) => void
+  onStepClick?: (step: number) => void
   sx?: SxProps<Theme>
 }
 
@@ -27,6 +28,7 @@ export function RampBadge({
   initialStatus,
   compact = false,
   onStatusChange,
+  onStepClick,
   sx,
 }: RampBadgeProps) {
   const [status, setStatus] = useState<RampStatus | null>(initialStatus || null)
@@ -34,21 +36,27 @@ export function RampBadge({
   const [resetting, setResetting] = useState<boolean>(false)
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false)
 
+  const onStatusChangeRef = useRef(onStatusChange)
+  useEffect(() => {
+    onStatusChangeRef.current = onStatusChange
+  }, [onStatusChange])
+
   const fetchStatus = useCallback(async () => {
     try {
       const data = await api.getRampStatus()
       setStatus(data)
-      onStatusChange?.(data)
+      onStatusChangeRef.current?.(data)
     } catch (e) {
       console.warn('Failed to fetch ramp status', e)
     } finally {
       setLoading(false)
     }
-  }, [onStatusChange])
+  }, [])
 
   useEffect(() => {
     if (initialStatus) {
       setStatus(initialStatus)
+      setLoading(false)
     } else {
       fetchStatus()
     }
@@ -60,7 +68,7 @@ export function RampBadge({
       const customEvent = e as CustomEvent<RampStatus>
       if (customEvent.detail) {
         setStatus(customEvent.detail)
-        onStatusChange?.(customEvent.detail)
+        onStatusChangeRef.current?.(customEvent.detail)
       } else {
         fetchStatus()
       }
@@ -70,7 +78,7 @@ export function RampBadge({
     return () => {
       window.removeEventListener('ramp-updated', handleRampUpdated)
     }
-  }, [fetchStatus, onStatusChange])
+  }, [fetchStatus])
 
   // 1-Click Reset to 1m
   const handleReset = async (e: React.MouseEvent) => {
@@ -79,26 +87,45 @@ export function RampBadge({
 
     // Optimistic UI update
     const previous = status
-    if (status) {
-      setStatus({
-        ...status,
-        current_step: 1,
-        is_capped: false,
-      })
-    }
+    const optimisticStatus: RampStatus = status
+      ? {
+          ...status,
+          current_step: 1,
+          is_capped: false,
+        }
+      : {
+          current_step: 1,
+          cap_minutes: 25,
+          is_capped: false,
+          today_focus_minutes: 0,
+          date: new Date().toISOString(),
+          config: {
+            cap_minutes: 25,
+            enabled_roles: ['work', 'learn'],
+            enabled_tasks: [],
+            excluded_tasks: [],
+            default_rest_fallback: 15,
+          },
+        }
+
+    setStatus(optimisticStatus)
+    onStatusChangeRef.current?.(optimisticStatus)
+    window.dispatchEvent(new CustomEvent('ramp-updated', { detail: optimisticStatus }))
 
     setResetting(true)
     try {
       soundSynth.playStart()
       const updated = await api.resetRamp()
       setStatus(updated)
-      onStatusChange?.(updated)
+      onStatusChangeRef.current?.(updated)
       window.dispatchEvent(new CustomEvent('ramp-updated', { detail: updated }))
     } catch (err) {
       console.error('Failed to reset ramp', err)
       // Rollback on failure
       if (previous) {
         setStatus(previous)
+        onStatusChangeRef.current?.(previous)
+        window.dispatchEvent(new CustomEvent('ramp-updated', { detail: previous }))
       }
     } finally {
       setResetting(false)
@@ -107,7 +134,8 @@ export function RampBadge({
 
   const handleConfigSaved = (updatedStatus: RampStatus) => {
     setStatus(updatedStatus)
-    onStatusChange?.(updatedStatus)
+    onStatusChangeRef.current?.(updatedStatus)
+    window.dispatchEvent(new CustomEvent('ramp-updated', { detail: updatedStatus }))
   }
 
   if (loading && !status) {
@@ -136,37 +164,55 @@ export function RampBadge({
 
   return (
     <>
-      <Tooltip title={tooltipText} arrow placement="bottom">
-        <Box
-          sx={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: { xs: 0.6, sm: 0.8 },
-            px: { xs: 1, sm: 1.2 },
-            py: 0.4,
-            borderRadius: 9999,
-            background: isCapped
-              ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.22) 0%, rgba(255, 107, 74, 0.18) 100%)'
-              : 'linear-gradient(135deg, rgba(255, 107, 74, 0.12) 0%, rgba(245, 158, 11, 0.14) 100%)',
-            border: `1px solid ${
-              isCapped ? 'rgba(245, 158, 11, 0.5)' : 'rgba(245, 158, 11, 0.28)'
-            }`,
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
-            boxShadow: isCapped
-              ? '0 0 16px rgba(245, 158, 11, 0.25), 0 4px 12px rgba(0, 0, 0, 0.3)'
-              : '0 4px 14px rgba(0, 0, 0, 0.25)',
-            transition: 'all 0.25s ease',
-            userSelect: 'none',
-            '&:hover': {
-              borderColor: 'rgba(245, 158, 11, 0.55)',
-              boxShadow: '0 0 18px rgba(245, 158, 11, 0.3)',
-            },
-            ...sx,
-          }}
-        >
-          {/* Lightning Icon & Step */}
-          <Stack direction="row" spacing={0.5} alignItems="center">
+      <Box
+        sx={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: { xs: 0.6, sm: 0.8 },
+          px: { xs: 1, sm: 1.2 },
+          py: 0.4,
+          borderRadius: 9999,
+          background: isCapped
+            ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.22) 0%, rgba(255, 107, 74, 0.18) 100%)'
+            : 'linear-gradient(135deg, rgba(255, 107, 74, 0.12) 0%, rgba(245, 158, 11, 0.14) 100%)',
+          border: `1px solid ${
+            isCapped ? 'rgba(245, 158, 11, 0.5)' : 'rgba(245, 158, 11, 0.28)'
+          }`,
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          boxShadow: isCapped
+            ? '0 0 16px rgba(245, 158, 11, 0.25), 0 4px 12px rgba(0, 0, 0, 0.3)'
+            : '0 4px 14px rgba(0, 0, 0, 0.25)',
+          transition: 'all 0.25s ease',
+          userSelect: 'none',
+          '&:hover': {
+            borderColor: 'rgba(245, 158, 11, 0.55)',
+            boxShadow: '0 0 18px rgba(245, 158, 11, 0.3)',
+          },
+          ...sx,
+        }}
+      >
+        {/* Lightning Icon & Step with Info Tooltip (no nested tooltips!) */}
+        <Tooltip title={tooltipText} arrow placement="bottom">
+          <Stack
+            direction="row"
+            spacing={0.5}
+            alignItems="center"
+            onClick={
+              onStepClick
+                ? (e) => {
+                    e.stopPropagation()
+                    onStepClick(currentStep)
+                  }
+                : undefined
+            }
+            sx={{
+              cursor: onStepClick ? 'pointer' : 'default',
+              borderRadius: 1,
+              px: 0.3,
+              '&:hover': onStepClick ? { opacity: 0.85 } : undefined,
+            }}
+          >
             <BoltRoundedIcon
               sx={{
                 color: '#F59E0B',
@@ -185,7 +231,22 @@ export function RampBadge({
                 letterSpacing: '-0.01em',
               }}
             >
-              {compact ? `${currentStep}м` : `Разгон: ${currentStep} мин`}
+              {compact ? (
+                `${currentStep}м`
+              ) : (
+                <>
+                  <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+                    Разгон:{' '}
+                  </Box>
+                  {currentStep}
+                  <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+                    {' мин'}
+                  </Box>
+                  <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>
+                    м
+                  </Box>
+                </>
+              )}
             </Typography>
             {isCapped && (
               <Box
@@ -206,68 +267,68 @@ export function RampBadge({
               </Box>
             )}
           </Stack>
+        </Tooltip>
 
-          {/* 1-Click Reset Button [🔄 1м] */}
-          <Tooltip title="Сбросить ступеньку разгона на 1 мин" arrow placement="top">
-            <Button
-              size="small"
-              onClick={handleReset}
-              disabled={resetting}
-              startIcon={
-                resetting ? (
-                  <CircularProgress size={11} sx={{ color: '#FBBF24' }} />
-                ) : (
-                  <RestartAltRoundedIcon sx={{ fontSize: '0.9rem !important' }} />
-                )
-              }
-              sx={{
-                minWidth: 'auto',
-                py: 0.2,
-                px: { xs: 0.7, sm: 0.9 },
-                fontSize: '0.72rem',
-                fontWeight: 700,
-                color: '#FBBF24',
-                bgcolor: 'rgba(245, 158, 11, 0.12)',
-                border: '1px solid rgba(245, 158, 11, 0.25)',
-                borderRadius: 9999,
-                lineHeight: 1.2,
-                transition: 'all 0.2s ease',
-                '&:hover': {
-                  bgcolor: 'rgba(245, 158, 11, 0.24)',
-                  borderColor: 'rgba(245, 158, 11, 0.5)',
-                  transform: 'scale(1.04)',
-                },
-                '&:active': {
-                  transform: 'scale(0.96)',
-                },
-              }}
-            >
-              1м
-            </Button>
-          </Tooltip>
+        {/* 1-Click Reset Button [🔄 1м] */}
+        <Tooltip title="Сбросить ступеньку разгона на 1 мин" arrow placement="top">
+          <Button
+            size="small"
+            onClick={handleReset}
+            disabled={resetting}
+            startIcon={
+              resetting ? (
+                <CircularProgress size={11} sx={{ color: '#FBBF24' }} />
+              ) : (
+                <RestartAltRoundedIcon sx={{ fontSize: '0.9rem !important' }} />
+              )
+            }
+            sx={{
+              minWidth: 'auto',
+              py: 0.2,
+              px: { xs: 0.7, sm: 0.9 },
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              color: '#FBBF24',
+              bgcolor: 'rgba(245, 158, 11, 0.12)',
+              border: '1px solid rgba(245, 158, 11, 0.25)',
+              borderRadius: 9999,
+              lineHeight: 1.2,
+              transition: 'all 0.2s ease',
+              '&:hover': {
+                bgcolor: 'rgba(245, 158, 11, 0.24)',
+                borderColor: 'rgba(245, 158, 11, 0.5)',
+                transform: 'scale(1.04)',
+              },
+              '&:active': {
+                transform: 'scale(0.96)',
+              },
+            }}
+          >
+            1м
+          </Button>
+        </Tooltip>
 
-          {/* Settings Gear Button */}
-          <Tooltip title="Настройки разгона" arrow placement="top">
-            <IconButton
-              size="small"
-              onClick={() => setSettingsOpen(true)}
-              sx={{
-                p: 0.35,
-                color: DESIGN_TOKENS.textMuted,
-                borderRadius: 9999,
-                transition: 'all 0.2s ease',
-                '&:hover': {
-                  color: DESIGN_TOKENS.textPrimary,
-                  bgcolor: 'rgba(255, 255, 255, 0.08)',
-                  transform: 'rotate(30deg)',
-                },
-              }}
-            >
-              <SettingsOutlinedIcon sx={{ fontSize: { xs: '0.95rem', sm: '1.05rem' } }} />
-            </IconButton>
-          </Tooltip>
-        </Box>
-      </Tooltip>
+        {/* Settings Gear Button */}
+        <Tooltip title="Настройки разгона" arrow placement="top">
+          <IconButton
+            size="small"
+            onClick={() => setSettingsOpen(true)}
+            sx={{
+              p: 0.35,
+              color: DESIGN_TOKENS.textMuted,
+              borderRadius: 9999,
+              transition: 'all 0.2s ease',
+              '&:hover': {
+                color: DESIGN_TOKENS.textPrimary,
+                bgcolor: 'rgba(255, 255, 255, 0.08)',
+                transform: 'rotate(30deg)',
+              },
+            }}
+          >
+            <SettingsOutlinedIcon sx={{ fontSize: { xs: '0.95rem', sm: '1.05rem' } }} />
+          </IconButton>
+        </Tooltip>
+      </Box>
 
       {/* Settings Modal */}
       <RampSettingsModal

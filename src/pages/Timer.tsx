@@ -12,6 +12,7 @@ import FormControl from '@mui/material/FormControl'
 import Box from '@mui/material/Box'
 import Divider from '@mui/material/Divider'
 import Chip from '@mui/material/Chip'
+import Tooltip from '@mui/material/Tooltip'
 import AvTimerOutlinedIcon from '@mui/icons-material/AvTimerOutlined'
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
@@ -20,11 +21,13 @@ import SkipNextRoundedIcon from '@mui/icons-material/SkipNextRounded'
 import FlashOnRoundedIcon from '@mui/icons-material/FlashOnRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
+import BoltRoundedIcon from '@mui/icons-material/BoltRounded'
 
 import { useSearchParams } from 'react-router-dom'
-import { api, RunningTask, TaskResult, PlanPercentResponse } from '../api/client'
+import { api, RunningTask, TaskResult, PlanPercentResponse, RampStatus } from '../api/client'
 import Alert from '../components/Alert'
 import Card from '../components/Card'
+import { RampBadge } from '../components/RampBadge'
 import { CircularTimerCanvas } from '../components/canvas/CircularTimerCanvas'
 import { soundSynth } from '../utils/audio'
 import { useHotkeys } from '../hooks/useHotkeys'
@@ -420,8 +423,9 @@ export default function Timer() {
   })
   const [targetMinutes, setTargetMinutes] = useState<number>(() => {
     const t = searchParams.get('target')
-    return t && !isNaN(Number(t)) ? Math.max(1, Number(t)) : 25
+    return t && !isNaN(Number(t)) ? Math.max(1, Number(t)) : 1
   })
+  const [rampStatus, setRampStatus] = useState<RampStatus | null>(null)
   const [timerMode, setTimerMode] = useState<TimerMode>('pomodoro')
 
   useEffect(() => {
@@ -432,6 +436,57 @@ export default function Timer() {
     if (paramTask) setTaskName(paramTask)
     if (paramRole && ['work', 'learn', 'rest'].includes(paramRole)) setRole(paramRole)
     if (paramTarget && !isNaN(Number(paramTarget))) setTargetMinutes(Math.max(1, Number(paramTarget)))
+  }, [searchParams])
+
+  // Fetch current ramp status on mount and sync targetMinutes if no ?target= param
+  useEffect(() => {
+    let mounted = true
+    const fetchRamp = async () => {
+      try {
+        const data = await api.getRampStatus()
+        if (!mounted) return
+        setRampStatus(data)
+        const paramTarget = searchParams.get('target')
+        if (!paramTarget || isNaN(Number(paramTarget))) {
+          const step = data.current_step || (data.is_capped ? (data.cap_minutes || 25) : 1)
+          setTargetMinutes(step)
+        }
+      } catch (err) {
+        console.warn('Failed to load ramp status in Timer', err)
+      }
+    }
+    fetchRamp()
+    return () => {
+      mounted = false
+    }
+  }, [searchParams])
+
+  // Listen for global ramp updates across components
+  useEffect(() => {
+    const handleRampUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent<RampStatus>
+      if (customEvent.detail) {
+        setRampStatus(customEvent.detail)
+        const paramTarget = searchParams.get('target')
+        if (!paramTarget || isNaN(Number(paramTarget))) {
+          const step = customEvent.detail.current_step || (customEvent.detail.is_capped ? (customEvent.detail.cap_minutes || 25) : 1)
+          setTargetMinutes(step)
+        }
+      }
+    }
+    window.addEventListener('ramp-updated', handleRampUpdated)
+    return () => {
+      window.removeEventListener('ramp-updated', handleRampUpdated)
+    }
+  }, [searchParams])
+
+  const handleRampStatusChange = useCallback((updated: RampStatus) => {
+    setRampStatus(updated)
+    const paramTarget = searchParams.get('target')
+    if (!paramTarget || isNaN(Number(paramTarget))) {
+      const step = updated.current_step || (updated.is_capped ? (updated.cap_minutes || 25) : 1)
+      setTargetMinutes(step)
+    }
   }, [searchParams])
 
   const [msg, setMsg] = useState<string | null>(null)
@@ -692,6 +747,12 @@ export default function Timer() {
     }
 
     setRunningTasks((prev) => prev.filter((t) => t.task_name !== tName))
+
+    // Refresh ramp status after task stop to update ladder step
+    api.getRampStatus().then((newStatus) => {
+      setRampStatus(newStatus)
+      window.dispatchEvent(new CustomEvent('ramp-updated', { detail: newStatus }))
+    }).catch(() => {})
 
     const isCombo = comboQueueRef.current.length > 0
     const isBatch = Boolean(batchSessionRef.current)
@@ -1459,9 +1520,16 @@ export default function Timer() {
             spacing={1.5}
             sx={{ mb: 2 }}
           >
-            <Typography variant="h6" fontWeight={800} sx={{ letterSpacing: '-0.01em' }}>
-              Запустить сессию
-            </Typography>
+            <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Typography variant="h6" fontWeight={800} sx={{ letterSpacing: '-0.01em' }}>
+                Запустить сессию
+              </Typography>
+              <RampBadge
+                initialStatus={rampStatus}
+                onStatusChange={handleRampStatusChange}
+                onStepClick={(step) => setTargetMinutes(step)}
+              />
+            </Stack>
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
               <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted, fontWeight: 600 }}>
                 Пакет (план):
@@ -1616,7 +1684,28 @@ export default function Timer() {
                     <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted, fontWeight: 600 }}>
                       Цель:
                     </Typography>
-                    {TIMER_PRESETS.map((mins) => (
+                    {/* Active Ramp Step Chip */}
+                    {rampStatus && (
+                      <Tooltip title={`Текущая ступенька разгона: ${rampStatus.current_step} мин (клик для выбора)`} arrow>
+                        <Chip
+                          icon={<BoltRoundedIcon sx={{ color: '#F59E0B !important', fontSize: '1rem !important' }} />}
+                          label={`${rampStatus.current_step}м`}
+                          size="small"
+                          onClick={() => setTargetMinutes(rampStatus.current_step)}
+                          sx={{
+                            cursor: 'pointer',
+                            fontFamily: DESIGN_TOKENS.fontMono,
+                            fontWeight: targetMinutes === rampStatus.current_step ? 700 : 600,
+                            bgcolor: targetMinutes === rampStatus.current_step ? 'rgba(245, 158, 11, 0.28)' : 'rgba(245, 158, 11, 0.1)',
+                            color: '#FBBF24',
+                            border: targetMinutes === rampStatus.current_step ? '1px solid #F59E0B' : '1px solid rgba(245, 158, 11, 0.3)',
+                            boxShadow: targetMinutes === rampStatus.current_step ? '0 0 12px rgba(245, 158, 11, 0.35)' : 'none',
+                            transition: 'all 0.2s ease',
+                          }}
+                        />
+                      </Tooltip>
+                    )}
+                    {TIMER_PRESETS.filter((mins) => mins !== rampStatus?.current_step).map((mins) => (
                       <Chip
                         key={mins}
                         label={`${mins}м`}

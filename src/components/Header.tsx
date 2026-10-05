@@ -52,24 +52,32 @@ export default function Header() {
       color="transparent"
       elevation={0}
       sx={{
-        backgroundColor: 'rgba(11, 15, 23, 0.82)',
+        backgroundColor: 'rgba(11, 15, 23, 0.85)',
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',
         borderBottom: `1px solid ${DESIGN_TOKENS.borderColor}`,
+        zIndex: 1000,
       }}
     >
-      <Container>
-        <Toolbar disableGutters sx={{ columnGap: 2, py: 0.5 }}>
-          <Stack direction="row" spacing={1.5} alignItems="center">
+      <Container maxWidth="lg" sx={{ px: { xs: 1.5, sm: 3 } }}>
+        <Toolbar
+          disableGutters
+          sx={{
+            columnGap: { xs: 1, sm: 2 },
+            py: 0.5,
+            minHeight: { xs: 48, sm: 56 },
+          }}
+        >
+          <Stack direction="row" spacing={{ xs: 1, sm: 1.5 }} alignItems="center">
             <Avatar
               sx={{
                 bgcolor: 'rgba(255, 107, 74, 0.15)',
                 color: ROLE_COLORS.work,
                 border: '1px solid rgba(255, 107, 74, 0.3)',
-                width: 36,
-                height: 36,
+                width: { xs: 30, sm: 36 },
+                height: { xs: 30, sm: 36 },
                 fontWeight: 800,
-                fontSize: '1rem',
+                fontSize: { xs: '0.85rem', sm: '1rem' },
                 boxShadow: '0 0 16px rgba(255, 107, 74, 0.25)',
               }}
             >
@@ -81,7 +89,7 @@ export default function Header() {
                 component="div"
                 sx={{
                   fontWeight: 800,
-                  fontSize: '1.05rem',
+                  fontSize: { xs: '0.92rem', sm: '1.05rem' },
                   letterSpacing: '-0.02em',
                   lineHeight: 1.2,
                 }}
@@ -94,6 +102,7 @@ export default function Header() {
                   color: DESIGN_TOKENS.textMuted,
                   fontSize: '0.72rem',
                   letterSpacing: '0.04em',
+                  display: { xs: 'none', sm: 'block' },
                 }}
               >
                 Tracker System
@@ -101,12 +110,22 @@ export default function Header() {
             </Box>
           </Stack>
           <Box sx={{ flexGrow: 1 }} />
-          <Stack direction="row" spacing={0.8} alignItems="center" component="nav">
+          {/* Desktop Navigation Items: hidden on mobile */}
+          <Stack
+            direction="row"
+            spacing={0.8}
+            alignItems="center"
+            component="nav"
+            sx={{ display: { xs: 'none', md: 'flex' } }}
+          >
             {navItems.map((item) => (
               <NavItemButton key={item.to} {...item} />
             ))}
+          </Stack>
 
-            <Box sx={{ ml: 1 }}>
+          {/* Action controls: RampBadge & Sound (visible on both mobile and desktop) */}
+          <Stack direction="row" spacing={{ xs: 0.6, sm: 1 }} alignItems="center">
+            <Box sx={{ ml: { xs: 0.5, md: 1 } }}>
               <RampBadge />
             </Box>
 
@@ -115,7 +134,6 @@ export default function Header() {
                 size="small"
                 onClick={handleToggleSound}
                 sx={{
-                  ml: 0.5,
                   color: soundOn ? ROLE_COLORS.work : DESIGN_TOKENS.textMuted,
                   bgcolor: soundOn ? 'rgba(255, 107, 74, 0.12)' : 'rgba(255, 255, 255, 0.05)',
                   border: `1px solid ${soundOn ? 'rgba(255, 107, 74, 0.3)' : DESIGN_TOKENS.borderColor}`,
