@@ -45,7 +45,6 @@ import Card from '../components/Card'
 import Progress from '../components/Progress'
 import { EveningFocusCard } from '../components/EveningFocusCard'
 import { TodayTaskProgressCard } from '../components/TodayTaskProgressCard'
-import { RampBadge } from '../components/RampBadge'
 import { formatRestMinutes } from '../utils/format'
 import { ROLE_COLORS, ROLE_THEMES, DESIGN_TOKENS } from '../constants/themeColors'
 import { Timeline24hCanvas, TimelineSession } from '../components/canvas/Timeline24hCanvas'
@@ -371,12 +370,9 @@ export default function Dashboard() {
         spacing={1.5}
         sx={{ mb: 2.5 }}
       >
-        <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Typography variant="body2" sx={{ color: DESIGN_TOKENS.textMuted }}>
-            Интерактивный дашборд TimeFlow Canvas
-          </Typography>
-          <RampBadge />
-        </Stack>
+        <Typography variant="body2" sx={{ color: DESIGN_TOKENS.textMuted }}>
+          Интерактивный дашборд TimeFlow Canvas
+        </Typography>
         <Button
           size="small"
           variant={isDemoMode ? 'contained' : 'outlined'}

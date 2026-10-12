@@ -438,56 +438,44 @@ export default function Timer() {
     if (paramTarget && !isNaN(Number(paramTarget))) setTargetMinutes(Math.max(1, Number(paramTarget)))
   }, [searchParams])
 
-  // Fetch current ramp status on mount and sync targetMinutes if no ?target= param
+  // Apply a ramp status; targetMinutes follows the ramp only when the step actually
+  // changes (and no ?target= param), so a refetch doesn't override the user's choice
+  const lastRampStepRef = useRef<number | null>(null)
+  const applyRampStatus = useCallback((next: RampStatus) => {
+    setRampStatus(next)
+    const step = next.current_step || (next.is_capped ? (next.cap_minutes || 25) : 1)
+    if (lastRampStepRef.current === step) return
+    lastRampStepRef.current = step
+    const paramTarget = searchParams.get('target')
+    if (!paramTarget || isNaN(Number(paramTarget))) {
+      setTargetMinutes(step)
+    }
+  }, [searchParams])
+
+  // Fetch current ramp status on mount
   useEffect(() => {
     let mounted = true
-    const fetchRamp = async () => {
-      try {
-        const data = await api.getRampStatus()
-        if (!mounted) return
-        setRampStatus(data)
-        const paramTarget = searchParams.get('target')
-        if (!paramTarget || isNaN(Number(paramTarget))) {
-          const step = data.current_step || (data.is_capped ? (data.cap_minutes || 25) : 1)
-          setTargetMinutes(step)
-        }
-      } catch (err) {
-        console.warn('Failed to load ramp status in Timer', err)
-      }
-    }
-    fetchRamp()
+    api.getRampStatus()
+      .then((data) => {
+        if (mounted) applyRampStatus(data)
+      })
+      .catch((err) => console.warn('Failed to load ramp status in Timer', err))
     return () => {
       mounted = false
     }
-  }, [searchParams])
+  }, [applyRampStatus])
 
   // Listen for global ramp updates across components
   useEffect(() => {
     const handleRampUpdated = (e: Event) => {
       const customEvent = e as CustomEvent<RampStatus>
-      if (customEvent.detail) {
-        setRampStatus(customEvent.detail)
-        const paramTarget = searchParams.get('target')
-        if (!paramTarget || isNaN(Number(paramTarget))) {
-          const step = customEvent.detail.current_step || (customEvent.detail.is_capped ? (customEvent.detail.cap_minutes || 25) : 1)
-          setTargetMinutes(step)
-        }
-      }
+      if (customEvent.detail) applyRampStatus(customEvent.detail)
     }
     window.addEventListener('ramp-updated', handleRampUpdated)
     return () => {
       window.removeEventListener('ramp-updated', handleRampUpdated)
     }
-  }, [searchParams])
-
-  const handleRampStatusChange = useCallback((updated: RampStatus) => {
-    setRampStatus(updated)
-    const paramTarget = searchParams.get('target')
-    if (!paramTarget || isNaN(Number(paramTarget))) {
-      const step = updated.current_step || (updated.is_capped ? (updated.cap_minutes || 25) : 1)
-      setTargetMinutes(step)
-    }
-  }, [searchParams])
+  }, [applyRampStatus])
 
   const [msg, setMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -524,27 +512,61 @@ export default function Timer() {
   batchSessionRef.current = batchSession
   const lastHandledBatchStepRef = useRef<number>(-1)
   const advanceBatchSessionRef = useRef<(taskName?: string, force?: boolean) => Promise<void>>()
+  const runningTasksRef = useRef<RunningTask[]>([])
 
-  const handleServerAutoStop = useCallback((tName: string, reason?: string) => {
-    soundSynth.playComplete()
-    if (reason === 'target_reached') {
-      setMsg(`🎉 Спринт завершен по дедлайну для '${tName}'!`)
-    } else if (reason === 'safety_cap_reached') {
-      setMsg(`⏹ Сессия для '${tName}' завершена по лимиту безопасности (20 мин).`)
-    } else if (reason === 'heartbeat_timeout') {
-      setMsg(`⏸ Сессия для '${tName}' приостановлена из-за таймаута активности.`)
+  // Single owner of the completion sound. Server auto-stop and the local tick both
+  // report the same finish, so a repeat for the same task within 3s is dropped.
+  const lastCueRef = useRef<{ name: string; at: number }>({ name: '', at: 0 })
+  const playCompletionCue = useCallback((tName: string, roleHint?: string) => {
+    const name = tName.trim().toLowerCase()
+    const now = Date.now()
+    if (lastCueRef.current.name === name && now - lastCueRef.current.at < 3000) return
+    lastCueRef.current = { name, at: now }
+
+    const queue = comboQueueRef.current
+    const comboTask = queue[comboIndexRef.current]
+    const isCurrentComboTask = Boolean(comboTask) && comboTask.taskName.trim().toLowerCase() === name
+    const batch = batchSessionRef.current
+    const effectiveRole =
+      roleHint ||
+      runningTasksRef.current.find((t) => t.task_name.trim().toLowerCase() === name)?.role ||
+      (isCurrentComboTask ? comboTask.role : undefined) ||
+      (batch && batch.currentTaskName.trim().toLowerCase() === name ? batch.currentRole : undefined)
+
+    if (isCurrentComboTask && comboIndexRef.current + 1 < queue.length) {
+      soundSynth.playComboStep()
+    } else if (effectiveRole === 'rest') {
+      soundSynth.playBreakComplete()
     } else {
-      setMsg(`Задача '${tName}' завершена`)
-    }
-    if (comboQueueRef.current.length > 0) {
-      advanceComboStepRef.current?.(tName)
-    }
-    if (batchSessionRef.current) {
-      advanceBatchSessionRef.current?.(tName)
+      soundSynth.playComplete()
     }
   }, [])
 
+  const handleServerAutoStop = useCallback(
+    (tName: string, reason?: string, taskRole?: string) => {
+      playCompletionCue(tName, taskRole)
+
+      if (reason === 'target_reached') {
+        setMsg(`🎉 Спринт завершен по дедлайну для '${tName}'!`)
+      } else if (reason === 'safety_cap_reached') {
+        setMsg(`⏹ Сессия для '${tName}' завершена по лимиту безопасности (20 мин).`)
+      } else if (reason === 'heartbeat_timeout') {
+        setMsg(`⏸ Сессия для '${tName}' приостановлена из-за таймаута активности.`)
+      } else {
+        setMsg(`Задача '${tName}' завершена`)
+      }
+      if (comboQueueRef.current.length > 0) {
+        advanceComboStepRef.current?.(tName)
+      }
+      if (batchSessionRef.current) {
+        advanceBatchSessionRef.current?.(tName)
+      }
+    },
+    [playCompletionCue]
+  )
+
   const { runningTasks, setRunningTasks, isConnected, serverTimeOffset } = useTimerSync(handleServerAutoStop)
+  runningTasksRef.current = runningTasks
 
   const startComboStep = useCallback(
     async (stepIndex: number) => {
@@ -594,8 +616,6 @@ export default function Timer() {
       }
       lastHandledComboIndexRef.current = currentIndex
 
-      soundSynth.playComplete()
-
       if (currentIndex + 1 < queue.length) {
         const nextIndex = currentIndex + 1
         await startComboStep(nextIndex)
@@ -625,8 +645,9 @@ export default function Timer() {
       // ignore if already stopped
     }
     setRunningTasks((prev) => prev.filter((t) => t.task_name !== currentTask.taskName))
+    playCompletionCue(currentTask.taskName, currentTask.role)
     await advanceComboStep(currentTask.taskName, true)
-  }, [advanceComboStep, setRunningTasks])
+  }, [advanceComboStep, playCompletionCue, setRunningTasks])
 
   const handleAbortCombo = useCallback(() => {
     clearStoredCombo()
@@ -737,6 +758,12 @@ export default function Timer() {
   const handleStop = async (tName: string, autoBlocked: boolean = false) => {
     setMsg(null)
     setError(null)
+    // Captured before the await: the WebSocket TASK_STOPPED removes the task meanwhile
+    const stoppingRole = runningTasksRef.current.find(
+      (t) => t.task_name.trim().toLowerCase() === tName.trim().toLowerCase()
+    )?.role
+    const isCombo = comboQueueRef.current.length > 0
+    const isBatch = Boolean(batchSessionRef.current)
     try {
       await api.stopTask({ task_name: tName })
     } catch (e: any) {
@@ -750,14 +777,11 @@ export default function Timer() {
 
     // Refresh ramp status after task stop to update ladder step
     api.getRampStatus().then((newStatus) => {
-      setRampStatus(newStatus)
       window.dispatchEvent(new CustomEvent('ramp-updated', { detail: newStatus }))
     }).catch(() => {})
 
-    const isCombo = comboQueueRef.current.length > 0
-    const isBatch = Boolean(batchSessionRef.current)
     if (autoBlocked || isCombo || isBatch) {
-      soundSynth.playComplete()
+      playCompletionCue(tName, stoppingRole)
       setMsg(`🎉 Спринт завершен для '${tName}'!`)
       if (isCombo) {
         await advanceComboStep(tName)
@@ -873,8 +897,6 @@ export default function Timer() {
         return
       }
       lastHandledBatchStepRef.current = session.step
-
-      soundSynth.playComplete()
 
       const newRemaining = Math.max(0, session.remainingMinutes - session.currentTaskDuration)
 
@@ -1526,7 +1548,7 @@ export default function Timer() {
               </Typography>
               <RampBadge
                 initialStatus={rampStatus}
-                onStatusChange={handleRampStatusChange}
+                onStatusChange={applyRampStatus}
                 onStepClick={(step) => setTargetMinutes(step)}
               />
             </Stack>

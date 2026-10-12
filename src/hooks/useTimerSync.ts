@@ -11,7 +11,7 @@ export interface TimerEvent {
   data?: any
 }
 
-export function useTimerSync(onServerAutoStop?: (taskName: string, reason?: string) => void) {
+export function useTimerSync(onServerAutoStop?: (taskName: string, reason?: string, role?: string) => void) {
   const [runningTasks, setRunningTasks] = useState<RunningTask[]>([])
   const [isConnected, setIsConnected] = useState(false)
   const [serverTimeOffset, setServerTimeOffset] = useState(0) // serverTime - localTime
@@ -91,9 +91,10 @@ export function useTimerSync(onServerAutoStop?: (taskName: string, reason?: stri
 
               case 'TASK_STOPPED':
                 if (data.task_name) {
+                  const stoppingTask = runningTasksRef.current.find((t) => t.task_name === data.task_name)
                   setRunningTasks((prev) => prev.filter((t) => t.task_name !== data.task_name))
                   if (data.reason && data.reason !== 'manual') {
-                    onServerAutoStopRef.current?.(data.task_name, data.reason)
+                    onServerAutoStopRef.current?.(data.task_name, data.reason, stoppingTask?.role || data.role)
                   }
                 }
                 break

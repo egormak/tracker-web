@@ -24,6 +24,20 @@ export interface RampBadgeProps {
   sx?: SxProps<Theme>
 }
 
+// Shared across badge instances: one in-flight status request, and a version
+// bumped on every mutation so a refetch started earlier cannot overwrite it
+let inflightStatus: Promise<RampStatus> | null = null
+let rampVersion = 0
+
+function loadRampStatus(): Promise<RampStatus> {
+  if (!inflightStatus) {
+    inflightStatus = api.getRampStatus().finally(() => {
+      inflightStatus = null
+    })
+  }
+  return inflightStatus
+}
+
 export function RampBadge({
   initialStatus,
   compact = false,
@@ -36,6 +50,19 @@ export function RampBadge({
   const [resetting, setResetting] = useState<boolean>(false)
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false)
 
+  const isMountedRef = useRef<boolean>(true)
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
+
+  const statusRef = useRef<RampStatus | null>(initialStatus || null)
+  useEffect(() => {
+    statusRef.current = status
+  }, [status])
+
   const onStatusChangeRef = useRef(onStatusChange)
   useEffect(() => {
     onStatusChangeRef.current = onStatusChange
@@ -43,18 +70,24 @@ export function RampBadge({
 
   const fetchStatus = useCallback(async () => {
     try {
-      const data = await api.getRampStatus()
+      const version = rampVersion
+      const data = await loadRampStatus()
+      if (!isMountedRef.current || version !== rampVersion) return
+      statusRef.current = data
       setStatus(data)
       onStatusChangeRef.current?.(data)
     } catch (e) {
       console.warn('Failed to fetch ramp status', e)
     } finally {
-      setLoading(false)
+      if (isMountedRef.current) {
+        setLoading(false)
+      }
     }
   }, [])
 
   useEffect(() => {
     if (initialStatus) {
+      statusRef.current = initialStatus
       setStatus(initialStatus)
       setLoading(false)
     } else {
@@ -62,13 +95,36 @@ export function RampBadge({
     }
   }, [initialStatus, fetchStatus])
 
+  // Re-fetch ramp status when tab is focused or becomes visible
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchStatus()
+      }
+    }
+    window.addEventListener('focus', fetchStatus)
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      window.removeEventListener('focus', fetchStatus)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [fetchStatus])
+
   // Listen for global ramp updates across components
   useEffect(() => {
     const handleRampUpdated = (e: Event) => {
       const customEvent = e as CustomEvent<RampStatus>
       if (customEvent.detail) {
-        setStatus(customEvent.detail)
-        onStatusChangeRef.current?.(customEvent.detail)
+        const next = customEvent.detail
+        rampVersion++
+        setLoading(false)
+        const prev = statusRef.current
+        if (prev && JSON.stringify(prev) === JSON.stringify(next)) {
+          return
+        }
+        statusRef.current = next
+        setStatus(next)
+        onStatusChangeRef.current?.(next)
       } else {
         fetchStatus()
       }
@@ -92,12 +148,16 @@ export function RampBadge({
           ...status,
           current_step: 1,
           is_capped: false,
+          reset_baseline_minutes: status.today_focus_minutes,
+          effective_focus_minutes: 0,
         }
       : {
           current_step: 1,
           cap_minutes: 25,
           is_capped: false,
           today_focus_minutes: 0,
+          reset_baseline_minutes: 0,
+          effective_focus_minutes: 0,
           date: new Date().toISOString(),
           config: {
             cap_minutes: 25,
@@ -108,6 +168,7 @@ export function RampBadge({
           },
         }
 
+    statusRef.current = optimisticStatus
     setStatus(optimisticStatus)
     onStatusChangeRef.current?.(optimisticStatus)
     window.dispatchEvent(new CustomEvent('ramp-updated', { detail: optimisticStatus }))
@@ -116,23 +177,32 @@ export function RampBadge({
     try {
       soundSynth.playStart()
       const updated = await api.resetRamp()
-      setStatus(updated)
-      onStatusChangeRef.current?.(updated)
+      if (isMountedRef.current) {
+        statusRef.current = updated
+        setStatus(updated)
+        onStatusChangeRef.current?.(updated)
+      }
       window.dispatchEvent(new CustomEvent('ramp-updated', { detail: updated }))
     } catch (err) {
       console.error('Failed to reset ramp', err)
       // Rollback on failure
       if (previous) {
-        setStatus(previous)
-        onStatusChangeRef.current?.(previous)
+        if (isMountedRef.current) {
+          statusRef.current = previous
+          setStatus(previous)
+          onStatusChangeRef.current?.(previous)
+        }
         window.dispatchEvent(new CustomEvent('ramp-updated', { detail: previous }))
       }
     } finally {
-      setResetting(false)
+      if (isMountedRef.current) {
+        setResetting(false)
+      }
     }
   }
 
   const handleConfigSaved = (updatedStatus: RampStatus) => {
+    statusRef.current = updatedStatus
     setStatus(updatedStatus)
     onStatusChangeRef.current?.(updatedStatus)
     window.dispatchEvent(new CustomEvent('ramp-updated', { detail: updatedStatus }))
@@ -158,7 +228,11 @@ export function RampBadge({
   const todayFocus = status?.today_focus_minutes ?? 0
   const isCapped = status?.is_capped ?? false
 
-  const tooltipText = `Шаг ${currentStep} из ${capMinutes} мин. Фокус сегодня: ${todayFocus} мин.${
+  // After a manual reset the step follows the focus logged since the reset
+  const resetBaseline = status?.reset_baseline_minutes ?? 0
+  const sinceReset = resetBaseline > 0 ? ` (после сброса: ${status?.effective_focus_minutes ?? 0} мин)` : ''
+
+  const tooltipText = `Шаг ${currentStep} из ${capMinutes} мин. Фокус сегодня: ${todayFocus} мин${sinceReset}.${
     isCapped ? ' (Потолок)' : ''
   }`
 

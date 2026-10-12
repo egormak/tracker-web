@@ -5,6 +5,8 @@
  * 1. Start Session: Triangle Wave (440Hz -> 554Hz, 250ms)
  * 2. Pause Session: Sine Wave (440Hz -> 330Hz, 200ms)
  * 3. Complete Session: Bell dual chord (C5 -> G5, 600ms)
+ * 4. Combo Step Advance: Rising arpeggio (F4 -> A4 -> C5, 550ms)
+ * 5. Rest / Break Complete: Gentle restorative chime (E5 -> B5, 680ms)
  */
 
 class SoundSynthesizer {
@@ -123,18 +125,17 @@ class SoundSynthesizer {
   }
 
   /**
-   * Complete sound: Harmonious bell chord (C5 523.25Hz -> G5 783.99Hz, 600ms)
+   * Schedules a set of sine notes sharing one attack/decay envelope
    */
-  public playComplete() {
+  private playNotes(
+    notes: { freq: number; time: number; duration: number }[],
+    { attack, peak, label }: { attack: number; peak: number; label: string }
+  ) {
     const ctx = this.getContext()
     if (!ctx) return
 
     try {
       const now = ctx.currentTime
-      const notes = [
-        { freq: 523.25, time: 0, duration: 0.5 },    // C5
-        { freq: 783.99, time: 0.12, duration: 0.48 }  // G5
-      ]
 
       notes.forEach(({ freq, time, duration }) => {
         const osc = ctx.createOscillator()
@@ -144,7 +145,7 @@ class SoundSynthesizer {
         osc.frequency.setValueAtTime(freq, now + time)
 
         gain.gain.setValueAtTime(0.001, now + time)
-        gain.gain.linearRampToValueAtTime(0.2, now + time + 0.02)
+        gain.gain.linearRampToValueAtTime(peak, now + time + attack)
         gain.gain.exponentialRampToValueAtTime(0.001, now + time + duration)
 
         osc.connect(gain)
@@ -154,8 +155,48 @@ class SoundSynthesizer {
         osc.stop(now + time + duration)
       })
     } catch (e) {
-      console.warn('Failed to play complete sound:', e)
+      console.warn(`Failed to play ${label} sound:`, e)
     }
+  }
+
+  /**
+   * Complete sound: Harmonious bell chord (C5 523.25Hz -> G5 783.99Hz, 600ms)
+   */
+  public playComplete() {
+    this.playNotes(
+      [
+        { freq: 523.25, time: 0, duration: 0.5 },     // C5
+        { freq: 783.99, time: 0.12, duration: 0.48 }, // G5
+      ],
+      { attack: 0.02, peak: 0.2, label: 'complete' }
+    )
+  }
+
+  /**
+   * Combo step advance sound: Rising melodic arpeggio (F4 -> A4 -> C5)
+   */
+  public playComboStep() {
+    this.playNotes(
+      [
+        { freq: 349.23, time: 0, duration: 0.2 },    // F4
+        { freq: 440.0, time: 0.1, duration: 0.2 },   // A4
+        { freq: 523.25, time: 0.2, duration: 0.35 }, // C5
+      ],
+      { attack: 0.02, peak: 0.18, label: 'combo step' }
+    )
+  }
+
+  /**
+   * Break / rest complete sound: Warm, gentle restorative chime (E5 -> B5)
+   */
+  public playBreakComplete() {
+    this.playNotes(
+      [
+        { freq: 659.25, time: 0, duration: 0.6 },    // E5
+        { freq: 987.77, time: 0.08, duration: 0.6 }, // B5
+      ],
+      { attack: 0.025, peak: 0.18, label: 'break complete' }
+    )
   }
 }
 

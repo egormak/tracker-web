@@ -93,6 +93,9 @@ export interface RampStatus {
   cap_minutes: number
   is_capped: boolean
   today_focus_minutes: number
+  // Focus at the last manual reset today (0 if none) and focus since then, which drives current_step
+  reset_baseline_minutes: number
+  effective_focus_minutes: number
   date: string
   config: RampConfig
 }
