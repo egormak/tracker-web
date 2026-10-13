@@ -28,6 +28,7 @@ import { api, RunningTask, TaskResult, PlanPercentResponse, RampStatus } from '.
 import Alert from '../components/Alert'
 import Card from '../components/Card'
 import { RampBadge } from '../components/RampBadge'
+import { BreakSelector } from '../components/BreakSelector'
 import { CircularTimerCanvas } from '../components/canvas/CircularTimerCanvas'
 import { soundSynth } from '../utils/audio'
 import { useHotkeys } from '../hooks/useHotkeys'
@@ -478,6 +479,7 @@ export default function Timer() {
   }, [applyRampStatus])
 
   const [msg, setMsg] = useState<string | null>(null)
+  const [showBreakSelector, setShowBreakSelector] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [availableTasks, setAvailableTasks] = useState<TaskResult[]>([])
 
@@ -750,6 +752,7 @@ export default function Timer() {
       setRunningTasks((prev) => [...prev.filter((t) => t.task_name !== tName), r.data])
       setTaskName('')
       setNextTaskInfo(null)
+      setShowBreakSelector(false)
     } catch (e: any) {
       setError(e.message)
     }
@@ -791,6 +794,11 @@ export default function Timer() {
     } else {
       soundSynth.playPause()
       setMsg(`Задача '${tName}' остановлена и сохранена`)
+    }
+
+    // Offer a break after a focus block; combo and batch flows pick the next step themselves.
+    if (!isCombo && !isBatch && (stoppingRole === 'work' || stoppingRole === 'learn')) {
+      setShowBreakSelector(true)
     }
   }
 
@@ -1177,6 +1185,15 @@ export default function Timer() {
 
           {error && <Alert type="error">{error}</Alert>}
           {msg && <Alert type="success">{msg}</Alert>}
+
+          {showBreakSelector && (
+            <BreakSelector
+              onStart={(name, taskRole, minutes) =>
+                handleStart(undefined, { taskName: name, role: taskRole, targetDuration: minutes })
+              }
+              onClose={() => setShowBreakSelector(false)}
+            />
+          )}
 
           {/* Prominent Combo Status Banner */}
           {comboQueue.length > 0 && comboQueue[comboIndex] && (

@@ -44,6 +44,7 @@ import Alert from '../components/Alert'
 import Card from '../components/Card'
 import Progress from '../components/Progress'
 import { EveningFocusCard } from '../components/EveningFocusCard'
+import { WeeklyDigestBlock } from '../components/WeeklyDigestBlock'
 import { TodayTaskProgressCard } from '../components/TodayTaskProgressCard'
 import { formatRestMinutes } from '../utils/format'
 import { ROLE_COLORS, ROLE_THEMES, DESIGN_TOKENS } from '../constants/themeColors'
@@ -757,6 +758,8 @@ export default function Dashboard() {
               <Typography color="text.secondary">Недельная статистика недоступна</Typography>
             ) : (
               <Stack spacing={3}>
+                <WeeklyDigestBlock />
+
                 {/* Insights overview tiles */}
                 {insights && (
                   <Grid container spacing={2}>

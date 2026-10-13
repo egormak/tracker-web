@@ -121,6 +121,53 @@ export interface WeeklyTaskTarget {
   time_done: number
 }
 
+export interface WeeklyDigestRole {
+  role: string
+  planned: number
+  done: number
+  share_percent: number
+}
+
+export interface WeeklyDigestTask {
+  name: string
+  role: string
+  planned: number
+  done: number
+  plan_percent: number
+  share_percent: number
+}
+
+export interface WeeklyDigestDelta {
+  name: string
+  role: string
+  planned: number
+  done: number
+  delta: number
+}
+
+export interface WeeklyDigestDay {
+  day: string
+  date: string
+  total_done: number
+}
+
+export interface WeeklyDigest {
+  week: 'current' | 'previous'
+  week_start_date: string
+  week_end_date: string
+  total_planned: number
+  total_done: number
+  roles: WeeklyDigestRole[]
+  strict: WeeklyDigestTask[]
+  free: WeeklyDigestTask[]
+  free_done: number
+  over_plan: WeeklyDigestDelta[]
+  untouched: WeeklyDigestDelta[]
+  unscheduled: WeeklyDigestDelta[]
+  days: WeeklyDigestDay[]
+  busiest_day?: WeeklyDigestDay
+}
+
 export interface WeeklyStatsResponse {
   week_start_date: string
   week_end_date: string
@@ -244,6 +291,8 @@ export const api = {
   getStatsDoneToday: () => request<TaskResult[]>('GET', '/api/v1/stats/done/today'),
   getStatsTasksToday: () => request<TaskResult[]>('GET', '/api/v1/stats/tasks/today'),
   getWeeklyStats: () => request<WeeklyStatsResponse>('GET', '/api/v1/stats/weekly'),
+  getWeeklyDigest: (week: 'current' | 'previous' = 'current') =>
+    request<WeeklyDigest>('GET', `/api/v1/stats/weekly/digest?week=${week}`),
   // Records summary
   getRecordsSummary: () => request<RecordsSummary>('GET', '/api/v1/records'),
   // Task list with planned vs done (today)
@@ -317,12 +366,28 @@ export const api = {
   skipEveningFocus: (taskName: string, category?: string, time?: number) =>
     request<{ status: string; data: EveningFocusResponse }>('POST', `/api/v1/mode/evening-focus/skip?${category ? `category=${encodeURIComponent(category)}&` : ''}${time ? `time=${time}` : ''}`, { task_name: taskName }),
 
+  // Break selector
+  getBreakOptions: () => request<{ status: string; data: BreakOptionsResponse }>('GET', '/api/v1/mode/break-options'),
+
   // Linear Warm-Up Ramp
   getRampStatus: () => request<RampStatus>('GET', '/api/v1/ramp/status'),
   resetRamp: () => request<RampStatus>('POST', '/api/v1/ramp/reset'),
   advanceRamp: () => request<RampStatus>('POST', '/api/v1/ramp/advance'),
   getRampConfig: () => request<RampConfig>('GET', '/api/v1/ramp/config'),
   updateRampConfig: (config: RampConfig) => request<RampStatus>('PUT', '/api/v1/ramp/config', config),
+}
+
+export interface BreakOption {
+  task_name: string
+  role: string
+  weekly_done: number
+  is_variety: boolean
+}
+
+export interface BreakOptionsResponse {
+  options: BreakOption[]
+  durations: number[]
+  default_duration: number
 }
 
 export interface EveningFocusCandidate {

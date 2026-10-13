@@ -34,7 +34,7 @@ There are no tests in this repo. If asked to add them, prefer Vitest + React Tes
   - `Manage.tsx` — task creation with role assignments.
 - `src/components/` — two kinds:
   - Presentational pieces (`Card`, `Header`, `Alert`, `Progress`) hold no business logic.
-  - Self-fetching feature widgets (`PlanPercents`, `EveningFocusCard`, `RampBadge`/`RampSettingsModal`, `TodayTaskProgressCard`) call `api` themselves and are dropped into pages as a unit.
+  - Self-fetching feature widgets (`PlanPercents`, `EveningFocusCard`, `BreakSelector`, `WeeklyDigestBlock`, `RampBadge`/`RampSettingsModal`, `TodayTaskProgressCard`) call `api` themselves and are dropped into pages as a unit.
 - `src/components/canvas/` — hand-drawn `<canvas>` 2D visualizations (`CircularTimerCanvas` on Timer, `Timeline24hCanvas`/`DonutChartCanvas` on Dashboard) that scale for `devicePixelRatio`. There is no chart library; extend these instead of adding one.
 - `src/hooks/` — custom React hooks:
   - `useTimerSync.ts` — WebSocket timer client connecting to `/api/v1/timer/ws`, handling real-time task events, exponential backoff reconnection, 25s heartbeats, server clock skew (`serverTimeOffset`), and tab visibility re-sync.
