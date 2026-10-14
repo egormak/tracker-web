@@ -39,7 +39,7 @@ import FavoriteBorderOutlinedIcon from '@mui/icons-material/FavoriteBorderOutlin
 import HistoryEduOutlinedIcon from '@mui/icons-material/HistoryEduOutlined'
 
 import { useNavigate } from 'react-router-dom'
-import { api, RestTimeResponse, RecordsSummary, TaskResult, WeeklyStatsResponse, RunningTask } from '../api/client'
+import { api, RestTimeResponse, RecordsSummary, TaskResult, WeeklyStatsResponse, RunningTask, StartOrigin } from '../api/client'
 import Alert from '../components/Alert'
 import Card from '../components/Card'
 import Progress from '../components/Progress'
@@ -97,12 +97,13 @@ export default function Dashboard() {
     }
   }, [])
 
-  const handleStartTask = async (taskName: string, role: string, duration?: number) => {
+  const handleStartTask = async (taskName: string, role: string, duration?: number, origin?: StartOrigin) => {
     try {
       await api.startTask({
         task_name: taskName,
         role: role || 'work',
         target_duration: duration || 25,
+        origin,
       })
       navigate(`/timer?task=${encodeURIComponent(taskName)}&role=${encodeURIComponent(role)}&target=${duration || 25}`)
     } catch (_e) {
@@ -391,7 +392,7 @@ export default function Dashboard() {
         </Button>
       </Stack>
 
-      <EveningFocusCard onStartTask={handleStartTask} />
+      <EveningFocusCard onStartTask={(name, taskRole, duration) => handleStartTask(name, taskRole, duration, 'evening')} />
 
       <Grid container spacing={{ xs: 2, md: 3 }} alignItems="stretch">
         {/* Today's Task Progress & Analytics */}

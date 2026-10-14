@@ -41,6 +41,40 @@ function DeltaList({ title, items, render }: { title: string; items: WeeklyDiges
   )
 }
 
+const USAGE_LABELS: Record<string, string> = {
+  start_manual: 'запуск вручную',
+  start_break_variety: 'перерыв — отстающая',
+  start_break_mood: 'перерыв — по настроению',
+  start_evening: 'вечерний режим',
+  start_combo: 'шаг комбо',
+  evening_skip: 'пропуск вечером',
+  ramp_reset: 'сброс разгона',
+  timer_extend: 'продление таймера',
+}
+
+const clientLabel = (client: string) => (client === 'unknown' ? 'без метки' : client)
+
+function ChipRow({ title, labels }: { title: string; labels: string[] }) {
+  if (labels.length === 0) return null
+  return (
+    <Box>
+      <Typography variant="overline" sx={{ color: DESIGN_TOKENS.textMuted }}>
+        {title}
+      </Typography>
+      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+        {labels.map((label) => (
+          <Chip
+            key={label}
+            size="small"
+            label={label}
+            sx={{ bgcolor: 'rgba(255, 255, 255, 0.05)', color: DESIGN_TOKENS.textSecondary }}
+          />
+        ))}
+      </Stack>
+    </Box>
+  )
+}
+
 // End-of-week debrief: where the week went by choice rather than by schedule.
 // `previous` covers the finished week on Monday, before the weekly wipe.
 export function WeeklyDigestBlock() {
@@ -67,6 +101,12 @@ export function WeeklyDigestBlock() {
   }, [week])
 
   const freeRanking = digest?.free.filter((t) => t.done > 0) ?? []
+  // `?? []`: a server older than the clients/usage blocks omits both fields.
+  const clientLabels = (digest?.clients ?? []).map(
+    (c) => `${clientLabel(c.client)} · ${formatMinutes(c.minutes)} · ${c.share_percent}%`,
+  )
+  const usageLabels = (digest?.usage ?? []).map((u) => `${USAGE_LABELS[u.event] ?? u.event} · ${u.count}`)
+  const isEmpty = !!digest && digest.total_done === 0 && usageLabels.length === 0
 
   return (
     <Paper
@@ -81,6 +121,7 @@ export function WeeklyDigestBlock() {
           {digest && (
             <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted }}>
               {digest.week_start_date} — {digest.week_end_date}
+              {digest.source === 'snapshot' && ' · снимок перед очисткой'}
             </Typography>
           )}
         </Box>
@@ -111,7 +152,7 @@ export function WeeklyDigestBlock() {
         <Typography variant="body2" sx={{ color: DESIGN_TOKENS.textMuted }}>
           Загрузка…
         </Typography>
-      ) : digest.total_done === 0 ? (
+      ) : isEmpty ? (
         <Typography variant="body2" color="text.secondary">
           За эту неделю записей нет.
         </Typography>
@@ -148,6 +189,9 @@ export function WeeklyDigestBlock() {
             <DeltaList title="Не начато" items={digest.untouched} render={(d) => `план ${formatMinutes(d.planned)}`} />
             <DeltaList title="Без расписания" items={digest.unscheduled} render={(d) => formatMinutes(d.done)} />
           </Grid>
+
+          <ChipRow title="Клиенты" labels={clientLabels} />
+          <ChipRow title="Использование функций" labels={usageLabels} />
         </Stack>
       )}
     </Paper>

@@ -9,6 +9,9 @@ async function request<T>(method: HttpMethod, path: string, body?: unknown): Pro
   if (initData) {
     headers['X-Telegram-Init-Data'] = initData
   }
+  // Names this client for the server's task records and weekly usage counters;
+  // the same build is `miniapp` when opened inside Telegram.
+  headers['X-Tracker-Client'] = initData ? 'miniapp' : 'web'
 
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method,
@@ -151,8 +154,24 @@ export interface WeeklyDigestDay {
   total_done: number
 }
 
+export interface WeeklyDigestClient {
+  client: string
+  records: number
+  minutes: number
+  share_percent: number
+}
+
+export interface WeeklyDigestUsage {
+  event: string
+  count: number
+  clients: { client: string; count: number }[]
+}
+
 export interface WeeklyDigest {
   week: 'current' | 'previous'
+  // 'snapshot': the week's records are wiped, this is the copy taken before the wipe
+  source: 'live' | 'snapshot'
+  snapshot_taken_at?: string
   week_start_date: string
   week_end_date: string
   total_planned: number
@@ -166,7 +185,13 @@ export interface WeeklyDigest {
   unscheduled: WeeklyDigestDelta[]
   days: WeeklyDigestDay[]
   busiest_day?: WeeklyDigestDay
+  clients: WeeklyDigestClient[]
+  usage: WeeklyDigestUsage[]
 }
+
+// How a started task was chosen, for the server's weekly usage counters.
+export type StartOrigin = 'break' | 'evening' | 'combo'
+
 
 export interface WeeklyStatsResponse {
   week_start_date: string
@@ -352,7 +377,7 @@ export const api = {
     request<SuccessResponse>('POST', '/api/v1/schedule/apply'),
 
   // Running Timer
-  startTask: (payload: { task_name: string; role: string; target_duration?: number; source_day?: string }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/start', payload),
+  startTask: (payload: { task_name: string; role: string; target_duration?: number; source_day?: string; origin?: StartOrigin }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/start', payload),
   stopTask: (payload?: { task_name?: string; reason?: string }) => request<{ status: string; data: TaskRecord }>('POST', '/api/v1/timer/run/stop', payload),
   pauseTask: (payload?: { task_name?: string; reason?: string }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/pause', payload),
   resumeTask: (payload?: { task_name?: string }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/resume', payload),

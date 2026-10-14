@@ -24,7 +24,7 @@ import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
 import BoltRoundedIcon from '@mui/icons-material/BoltRounded'
 
 import { useSearchParams } from 'react-router-dom'
-import { api, RunningTask, TaskResult, PlanPercentResponse, RampStatus } from '../api/client'
+import { api, RunningTask, TaskResult, PlanPercentResponse, RampStatus, StartOrigin } from '../api/client'
 import Alert from '../components/Alert'
 import Card from '../components/Card'
 import { RampBadge } from '../components/RampBadge'
@@ -163,6 +163,7 @@ interface NextTaskInfo {
   targetDuration: number
   sourceDay?: string
   percent?: number
+  origin?: StartOrigin
 }
 
 interface TaskTimerItemProps {
@@ -586,6 +587,7 @@ export default function Timer() {
           task_name: stepTask.taskName,
           role: stepTask.role || 'work',
           target_duration: stepTask.duration,
+          origin: 'combo',
         })
         soundSynth.playStart()
         setRunningTasks((prev) => [...prev.filter((t) => t.task_name !== stepTask.taskName), res.data])
@@ -747,6 +749,7 @@ export default function Timer() {
         role: tRole,
         target_duration: tTarget,
         source_day: tSource,
+        origin: forceTaskInfo?.origin,
       })
       soundSynth.playStart()
       setRunningTasks((prev) => [...prev.filter((t) => t.task_name !== tName), r.data])
@@ -1189,7 +1192,7 @@ export default function Timer() {
           {showBreakSelector && (
             <BreakSelector
               onStart={(name, taskRole, minutes) =>
-                handleStart(undefined, { taskName: name, role: taskRole, targetDuration: minutes })
+                handleStart(undefined, { taskName: name, role: taskRole, targetDuration: minutes, origin: 'break' })
               }
               onClose={() => setShowBreakSelector(false)}
             />
