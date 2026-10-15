@@ -11,7 +11,6 @@ import Typography from '@mui/material/Typography'
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined'
 import PlaylistAddCheckRoundedIcon from '@mui/icons-material/PlaylistAddCheckRounded'
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday'
-import LocalHotelOutlinedIcon from '@mui/icons-material/LocalHotelOutlined'
 import AssignmentTurnedInOutlinedIcon from '@mui/icons-material/AssignmentTurnedInOutlined'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import TimelapseOutlinedIcon from '@mui/icons-material/TimelapseOutlined'
@@ -28,7 +27,6 @@ const navItems = [
   { to: '/timer', label: 'Timer', icon: <TimelapseOutlinedIcon fontSize="small" /> },
   { to: '/plan', label: 'Plan', icon: <PlaylistAddCheckRoundedIcon fontSize="small" /> },
   { to: '/schedule', label: 'Schedule', icon: <CalendarTodayIcon fontSize="small" /> },
-  { to: '/rest', label: 'Rest', icon: <LocalHotelOutlinedIcon fontSize="small" /> },
   { to: '/record', label: 'Record', icon: <AssignmentTurnedInOutlinedIcon fontSize="small" /> },
   { to: '/manage', label: 'Manage', icon: <ManageAccountsRoundedIcon fontSize="small" /> },
 ]

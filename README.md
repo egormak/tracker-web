@@ -6,12 +6,12 @@ Modern web interface and Telegram Mini App for the Go `tracker-server` REST API,
 Features
 --------
 
-- **Analytics Dashboard**: Real-time stats, weekly metrics breakdown (Overview, Daily Breakdown, Task Targets), 24h session timeline canvas, role donut chart, Evening Focus mode, Today task progress card with search & filters, and Linear Warm-Up Ramp progression.
+- **Analytics Dashboard**: Real-time stats, weekly metrics breakdown (Overview, Daily Breakdown, Task Targets), 24h session timeline canvas, role donut chart, Evening Focus mode with the evening batch launcher, Debt card (previous days' unfinished schedule this week), Today task progress card with search & filters, and Linear Warm-Up Ramp progression.
 - **Interactive Weekly Schedule**: Multi-day schedule editor, task prioritization, rollover & backlog tracking, and one-click active schedule application.
 - **Real-Time Running Timer**: WebSocket-driven live concurrent task tracking (`/api/v1/timer/ws`), high-DPI circular canvas timer, zero-asset Web Audio synthesis feedback, keyboard shortcuts, sequence modes (percent, backlog, evening combo), and batch session runner.
 - **Dual Runtime**: Runs as a desktop browser application and as an embedded Telegram Mini App (`window.Telegram.WebApp`) with native back-button integration, automatic viewport expansion, and init-data authentication.
 - **Warm-Up Ladder 2.0 (Linear Ramp)**: Progressive focus cap management with settings configuration and cross-component event sync.
-- **Rest Balance Management**: Track rest time in scaled units (`units = minutes * 100`) with support for adding, spending, and resetting balance.
+- **Debt & Evening Batch**: The Debt card shows the week's unfinished schedule from previous days (total, items, a Monday-to-Sunday status strip); the evening batch starts an anchor task plus the next candidates, each sprint optionally paying part of its past debt (`debt_share`). A "day closed" toast plays when a previous day's schedule becomes fully done.
 - **Plan & Record Management**: Manage task rotation, configure plan percentage groups, and log completed work.
 
 Prerequisites
@@ -49,11 +49,10 @@ npm run preview
 
 Pages
 -----
-- **Dashboard** (`/`): Today's statistics, weekly analytics tabs, 24h timeline canvas, role breakdown donut chart, Evening Focus recommendations, Today task progress with filtering, and Linear Ramp badge.
+- **Dashboard** (`/`): Today's statistics, weekly analytics tabs, 24h timeline canvas, role breakdown donut chart, Evening Focus recommendations and batch launcher, Debt card, Today task progress with filtering, and Linear Ramp badge.
 - **Schedule** (`/schedule`): Weekly schedule editor by day, task priorities and percent groups, rollover & backlog tasks, and schedule activation.
 - **Timer** (`/timer`): Active running tasks, circular canvas timer, WebSocket sync, audio cues, keyboard shortcuts, batch & combo sessions, and URL query parameter initialization (`?task=&role=&target=&combo=`).
 - **Plan** (`/plan`): Next task by plan rotation, plan percent group rotation, and procents configuration.
-- **Rest** (`/rest`): Rest balance tracking with add, spend, and reset actions.
 - **Record** (`/record`): Manual recording of task duration, source day, and service distribution.
 - **Manage** (`/manage`): Create tasks with role assignments (`work`, `learn`, `rest`, `plan`).
 

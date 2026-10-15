@@ -2,7 +2,15 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { api, RunningTask, getTimerWebSocketUrl } from '../api/client'
 
 export interface TimerEvent {
-  type: 'TASK_STARTED' | 'TASK_PAUSED' | 'TASK_RESUMED' | 'TASK_STOPPED' | 'TASK_ADJUSTED' | 'HEARTBEAT_ACK' | 'STATE_SYNC'
+  type:
+    | 'TASK_STARTED'
+    | 'TASK_PAUSED'
+    | 'TASK_RESUMED'
+    | 'TASK_STOPPED'
+    | 'TASK_ADJUSTED'
+    | 'HEARTBEAT_ACK'
+    | 'STATE_SYNC'
+    | 'DAY_CLOSED'
   task_name?: string
   role?: string
   duration?: number
@@ -10,6 +18,16 @@ export interface TimerEvent {
   server_time: number
   data?: any
 }
+
+// Payload of DAY_CLOSED: a previous day's schedule became fully done.
+export interface DayClosedDetail {
+  day: string
+  date: string
+}
+
+// Window events other widgets listen to (no global store in this app).
+export const DAY_CLOSED_EVENT = 'day-closed'
+export const DEBT_UPDATED_EVENT = 'debt-updated'
 
 export function useTimerSync(onServerAutoStop?: (taskName: string, reason?: string, role?: string) => void) {
   const [runningTasks, setRunningTasks] = useState<RunningTask[]>([])
@@ -96,6 +114,16 @@ export function useTimerSync(onServerAutoStop?: (taskName: string, reason?: stri
                   if (data.reason && data.reason !== 'manual') {
                     onServerAutoStopRef.current?.(data.task_name, data.reason, stoppingTask?.role || data.role)
                   }
+                }
+                // Every stop may pay off debt, so debt widgets refetch.
+                window.dispatchEvent(new CustomEvent(DEBT_UPDATED_EVENT))
+                break
+
+              case 'DAY_CLOSED':
+                if (data.data && data.data.day) {
+                  const detail: DayClosedDetail = { day: data.data.day, date: data.data.date || '' }
+                  window.dispatchEvent(new CustomEvent<DayClosedDetail>(DAY_CLOSED_EVENT, { detail }))
+                  window.dispatchEvent(new CustomEvent(DEBT_UPDATED_EVENT))
                 }
                 break
 

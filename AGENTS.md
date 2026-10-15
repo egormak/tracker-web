@@ -4,10 +4,10 @@
 
 This repository is a Vite + React 18 + TypeScript web UI and Telegram Mini App for the `tracker-server` REST API. Source code lives in `src/`:
 
-- `src/pages/`: Route-level screens (`Dashboard.tsx`, `Schedule.tsx`, `Timer.tsx`, `Plan.tsx`, `Record.tsx`, `Rest.tsx`, `Manage.tsx`). Each page is self-contained with local state and `useEffect` fetches.
+- `src/pages/`: Route-level screens (`Dashboard.tsx`, `Schedule.tsx`, `Timer.tsx`, `Plan.tsx`, `Record.tsx`, `Manage.tsx`). Each page is self-contained with local state and `useEffect` fetches.
 - `src/components/`: Shared UI components divided into:
   - Presentational components (`Card`, `Header`, `Alert`, `Progress`).
-  - Feature widgets (`PlanPercents`, `EveningFocusCard`, `RampBadge`, `RampSettingsModal`, `TodayTaskProgressCard`) that interact with `api` directly.
+  - Feature widgets (`PlanPercents`, `EveningFocusCard`, `DebtCard`, `RampBadge`, `RampSettingsModal`, `TodayTaskProgressCard`) that interact with `api` directly.
 - `src/components/canvas/`: High-DPI HTML5 Canvas 2D visualizations (`CircularTimerCanvas`, `Timeline24hCanvas`, `DonutChartCanvas`). Extend these instead of adding third-party chart libraries.
 - `src/hooks/`: Custom React hooks:
   - `useTimerSync.ts`: WebSocket client for `/api/v1/timer/ws`, real-time task state updates, heartbeats, exponential reconnect, and server clock skew compensation.
@@ -15,8 +15,7 @@ This repository is a Vite + React 18 + TypeScript web UI and Telegram Mini App f
 - `src/constants/`: Central styling constants:
   - `themeColors.ts`: Design tokens (`DESIGN_TOKENS`), role themes (`ROLE_THEMES` for work/learn/rest/other), role colors (`ROLE_COLORS`), role tags (`ROLE_TAGS`), and timer presets (`TIMER_PRESETS`).
 - `src/api/client.ts`: Centralized API client. Contains all DTO interfaces (matching `openapi.yml`), typed `api` endpoint methods, and `getTimerWebSocketUrl()`. Automatically attaches Telegram `initData` via headers/query params.
-- `src/utils/`: Formatting and browser utility functions:
-  - `format.ts`: `formatRestMinutes` (rest time units are scaled by 100).
+- `src/utils/`: Browser utility functions:
   - `audio.ts`: `soundSynth` zero-asset Web Audio API synthesizer for tactile session sounds.
 - `src/theme.ts` & `src/styles.css`: Dark MUI theme configuration and app-wide CSS custom properties.
 - `src/main.tsx` & `src/App.tsx`: App mount, route definitions, dynamic ambient glow background, responsive desktop/mobile shells, and Telegram WebApp lifecycle.
@@ -35,7 +34,7 @@ Set `VITE_API_BASE_URL` when the API is not same-origin, for example `VITE_API_B
 - **Centralized API**: All network interaction belongs in `src/api/client.ts`. Never inline raw `fetch()` or `WebSocket` instances in pages or components.
 - **Real-Time Timer Sync**: Live running-task state is managed via `useTimerSync.ts` over WebSocket (`/api/v1/timer/ws`). Do not poll `/api/v1/timer/run/list` in intervals. Visual smoothness is maintained via a 1s local tick in `TaskTimerItem`.
 - **Session Chains & Storage**: Client-side multi-task chains (`tracker_evening_combo_session`, `tracker_batch_session`) persist to `localStorage`.
-- **Rest-Time Representation**: API rest time is an integer scaled by 100 (`units = minutes * 100`). Always use `formatRestMinutes(raw)` for display.
+- **Debt & Day Closed**: `DebtCard` reads `GET /api/v1/debt` and refetches on the window event `debt-updated`, which `useTimerSync` dispatches after every `TASK_STOPPED`. The `DAY_CLOSED` WebSocket event is re-dispatched as `day-closed` and shown by the app-level `DayClosedToast`.
 - **Linear Warm-Up Ramp**: Warm-Up Ladder 2.0 (`/api/v1/ramp/*`) synchronizes across components using the custom event `ramp-updated` on `window`.
 - **Telegram Mini App**: Code interacting with Telegram must guard on `window.Telegram?.WebApp` to ensure compatibility with standalone desktop browsers.
 
@@ -56,6 +55,6 @@ No automated test runner is currently configured. Treat `npm run build` (`tsc -b
 
 Follow Conventional Commits (`feat:`, `fix:`, `refactor:`, `docs:`, `perf:`), for example:
 - `feat: implement WebSocket-based real-time timer synchronization`
-- `fix: correct rest time formatting on balance reset`
+- `fix: keep the batch anchor when candidates refresh`
 
 Keep commit messages imperative and scoped to one logical change. Pull requests should summarize changes and confirm that `npm run build` succeeds.

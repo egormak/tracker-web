@@ -164,7 +164,7 @@ export function RampBadge({
             enabled_roles: ['work', 'learn'],
             enabled_tasks: [],
             excluded_tasks: [],
-            default_rest_fallback: 15,
+            default_fallback_minutes: 15,
           },
         }
 

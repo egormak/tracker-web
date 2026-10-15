@@ -17,18 +17,17 @@ import { useEffect, useState } from 'react'
 
 import Dashboard from './pages/Dashboard'
 import Plan from './pages/Plan'
-import Rest from './pages/Rest'
 import Record from './pages/Record'
 import Manage from './pages/Manage'
 import Timer from './pages/Timer'
 import Schedule from './pages/Schedule'
 import Header from './components/Header'
+import { DayClosedToast } from './components/DayClosedToast'
 import { DESIGN_TOKENS, ROLE_COLORS } from './constants/themeColors'
 
 // Icons
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined'
 import TimelapseOutlinedIcon from '@mui/icons-material/TimelapseOutlined'
-import LocalHotelOutlinedIcon from '@mui/icons-material/LocalHotelOutlined'
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday'
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded'
 import PlaylistAddCheckRoundedIcon from '@mui/icons-material/PlaylistAddCheckRounded'
@@ -73,7 +72,6 @@ export default function App() {
     if (path === '/') return 0
     if (path === '/timer') return 1
     if (path === '/schedule') return 2
-    if (path === '/rest') return 3
     return -1
   }
 
@@ -81,17 +79,13 @@ export default function App() {
     if (newValue === 0) navigate('/')
     else if (newValue === 1) navigate('/timer')
     else if (newValue === 2) navigate('/schedule')
-    else if (newValue === 3) navigate('/rest')
-    else if (newValue === 4) setDrawerOpen(true)
+    else if (newValue === 3) setDrawerOpen(true)
   }
 
   // Dynamic ambient glow depending on page/route
   const getAmbientGlowBackground = () => {
     if (location.pathname === '/timer') {
       return 'radial-gradient(circle at 50% 10%, rgba(255, 107, 74, 0.12), transparent 50%), radial-gradient(circle at 80% 90%, rgba(59, 130, 246, 0.08), transparent 40%), #0B0F17'
-    }
-    if (location.pathname === '/rest') {
-      return 'radial-gradient(circle at 50% 10%, rgba(16, 185, 129, 0.12), transparent 50%), #0B0F17'
     }
     if (location.pathname === '/schedule' || location.pathname === '/plan') {
       return 'radial-gradient(circle at 50% 10%, rgba(59, 130, 246, 0.12), transparent 50%), #0B0F17'
@@ -113,13 +107,13 @@ export default function App() {
     >
       {/* Top Header shown on Desktop and Mobile */}
       <Header />
+      <DayClosedToast />
 
       {/* Main content container */}
       <Container sx={{ pt: { xs: 2, md: 3 }, pb: 6, px: { xs: 1.5, sm: 3 } }}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/plan" element={<Plan />} />
-          <Route path="/rest" element={<Rest />} />
           <Route path="/record" element={<Record />} />
           <Route path="/manage" element={<Manage />} />
           <Route path="/timer" element={<Timer />} />
@@ -162,7 +156,6 @@ export default function App() {
           <BottomNavigationAction label="Главная" icon={<DashboardOutlinedIcon />} />
           <BottomNavigationAction label="Таймер" icon={<TimelapseOutlinedIcon />} />
           <BottomNavigationAction label="График" icon={<CalendarTodayIcon />} />
-          <BottomNavigationAction label="Отдых" icon={<LocalHotelOutlinedIcon />} />
           <BottomNavigationAction label="Меню" icon={<MenuRoundedIcon />} />
         </BottomNavigation>
       </Paper>

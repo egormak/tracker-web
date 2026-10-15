@@ -26,7 +26,6 @@ import TableRow from '@mui/material/TableRow'
 import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined'
 import HistoryToggleOffOutlinedIcon from '@mui/icons-material/HistoryToggleOffOutlined'
 import TimelineOutlinedIcon from '@mui/icons-material/TimelineOutlined'
-import NightlightRoundOutlinedIcon from '@mui/icons-material/NightlightRoundOutlined'
 import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined'
 import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined'
 import TrendingUpOutlinedIcon from '@mui/icons-material/TrendingUpOutlined'
@@ -39,14 +38,14 @@ import FavoriteBorderOutlinedIcon from '@mui/icons-material/FavoriteBorderOutlin
 import HistoryEduOutlinedIcon from '@mui/icons-material/HistoryEduOutlined'
 
 import { useNavigate } from 'react-router-dom'
-import { api, RestTimeResponse, RecordsSummary, TaskResult, WeeklyStatsResponse, RunningTask, StartOrigin } from '../api/client'
+import { api, RecordsSummary, TaskResult, WeeklyStatsResponse, RunningTask, StartOrigin } from '../api/client'
 import Alert from '../components/Alert'
 import Card from '../components/Card'
 import Progress from '../components/Progress'
 import { EveningFocusCard } from '../components/EveningFocusCard'
+import { DebtCard } from '../components/DebtCard'
 import { WeeklyDigestBlock } from '../components/WeeklyDigestBlock'
 import { TodayTaskProgressCard } from '../components/TodayTaskProgressCard'
-import { formatRestMinutes } from '../utils/format'
 import { ROLE_COLORS, ROLE_THEMES, DESIGN_TOKENS } from '../constants/themeColors'
 import { Timeline24hCanvas, TimelineSession } from '../components/canvas/Timeline24hCanvas'
 import { DonutChartCanvas, DonutSegment } from '../components/canvas/DonutChartCanvas'
@@ -54,7 +53,6 @@ import { DonutChartCanvas, DonutSegment } from '../components/canvas/DonutChartC
 export default function Dashboard() {
   const navigate = useNavigate()
   const [records, setRecords] = useState<RecordsSummary | null>(null)
-  const [rest, setRest] = useState<RestTimeResponse | null>(null)
   const [tasks, setTasks] = useState<TaskResult[]>([])
   const [weeklyStats, setWeeklyStats] = useState<WeeklyStatsResponse | null>(null)
   const [runningTasks, setRunningTasks] = useState<RunningTask[]>([])
@@ -72,16 +70,14 @@ export default function Dashboard() {
     let mounted = true
     async function load() {
       try {
-        const [rec, r, tl, ws, rt] = await Promise.all([
+        const [rec, tl, ws, rt] = await Promise.all([
           api.getRecordsSummary(),
-          api.restGet(),
           api.getStatsTasksToday(),
           api.getWeeklyStats(),
           api.getRunningTasks().catch(() => ({ data: [] })),
         ])
         if (!mounted) return
         setRecords(rec)
-        setRest(r)
         setTasks(tl)
         setWeeklyStats(ws)
         setRunningTasks(rt.data || [])
@@ -283,9 +279,6 @@ export default function Dashboard() {
         if (s.role === 'learn') learnMin += s.minutes
         if (s.role === 'rest') restMin += s.minutes
       })
-      if (rest) {
-        restMin = Math.max(restMin, Math.round(rest.rest_time / 100))
-      }
     }
 
     const totalFocusMin = workMin + learnMin
@@ -327,7 +320,7 @@ export default function Dashboard() {
       learnGoalPct,
       restGoalPct,
     }
-  }, [donutSegments, rest, isDemoMode])
+  }, [donutSegments, isDemoMode])
 
   const formatSecToTime = (secs: number) => {
     const h = Math.floor(secs / 3600) % 24
@@ -354,13 +347,7 @@ export default function Dashboard() {
       icon: <TimelineOutlinedIcon fontSize="small" />,
       color: '#A78BFA',
     },
-    rest && {
-      label: 'Баланс отдыха',
-      value: `${formatRestMinutes(rest.rest_time)} мин`,
-      icon: <NightlightRoundOutlinedIcon fontSize="small" />,
-      color: ROLE_COLORS.rest,
-    },
-  ].filter(Boolean) as Array<{ label: string; value: string; icon: ReactNode; color: string }>
+  ] as Array<{ label: string; value: string; icon: ReactNode; color: string }>
 
   return (
     <Box sx={{ width: '100%' }}>
@@ -393,6 +380,8 @@ export default function Dashboard() {
       </Stack>
 
       <EveningFocusCard onStartTask={(name, taskRole, duration) => handleStartTask(name, taskRole, duration, 'evening')} />
+
+      <DebtCard />
 
       <Grid container spacing={{ xs: 2, md: 3 }} alignItems="stretch">
         {/* Today's Task Progress & Analytics */}

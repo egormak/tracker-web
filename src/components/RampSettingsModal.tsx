@@ -28,7 +28,7 @@ export interface RampSettingsModalProps {
 }
 
 const CAP_PRESETS = [15, 20, 25, 30]
-const REST_PRESETS = [5, 10, 15, 20]
+const FALLBACK_PRESETS = [5, 10, 15, 20]
 const AVAILABLE_ROLES = [
   { key: 'work', label: 'Работа', color: ROLE_COLORS.work },
   { key: 'learn', label: 'Изучение', color: ROLE_COLORS.learn },
@@ -45,7 +45,7 @@ export function RampSettingsModal({
   const [enabledRoles, setEnabledRoles] = useState<string[]>(['work', 'learn'])
   const [enabledTasks, setEnabledTasks] = useState<string[]>(['home_task'])
   const [excludedTasks, setExcludedTasks] = useState<string[]>(['video', 'movies', 'games', 'telegram'])
-  const [defaultRestFallback, setDefaultRestFallback] = useState<number>(15)
+  const [defaultFallbackMinutes, setDefaultFallbackMinutes] = useState<number>(15)
 
   const [newTaskInput, setNewTaskInput] = useState<string>('')
   const [newExcludedInput, setNewExcludedInput] = useState<string>('')
@@ -63,7 +63,7 @@ export function RampSettingsModal({
       setEnabledRoles(currentConfig.enabled_roles || [])
       setEnabledTasks(currentConfig.enabled_tasks || [])
       setExcludedTasks(currentConfig.excluded_tasks || [])
-      setDefaultRestFallback(currentConfig.default_rest_fallback || 15)
+      setDefaultFallbackMinutes(currentConfig.default_fallback_minutes || 15)
     } else {
       // Fetch fresh config from API
       setLoading(true)
@@ -74,7 +74,7 @@ export function RampSettingsModal({
           setEnabledRoles(cfg.enabled_roles || [])
           setEnabledTasks(cfg.enabled_tasks || [])
           setExcludedTasks(cfg.excluded_tasks || [])
-          setDefaultRestFallback(cfg.default_rest_fallback || 15)
+          setDefaultFallbackMinutes(cfg.default_fallback_minutes || 15)
         })
         .catch((e: any) => {
           setError(e.message || 'Ошибка загрузки конфигурации')
@@ -124,8 +124,8 @@ export function RampSettingsModal({
       setError('Потолок разгона должен быть не менее 5 минут')
       return
     }
-    if (defaultRestFallback < 1) {
-      setError('Дефолтное время отдыха должно быть не менее 1 минуты')
+    if (defaultFallbackMinutes < 1) {
+      setError('Длина по умолчанию должна быть не менее 1 минуты')
       return
     }
 
@@ -136,7 +136,7 @@ export function RampSettingsModal({
         enabled_roles: enabledRoles,
         enabled_tasks: enabledTasks,
         excluded_tasks: excludedTasks,
-        default_rest_fallback: Math.round(defaultRestFallback),
+        default_fallback_minutes: Math.round(defaultFallbackMinutes),
       }
       const updatedStatus = await api.updateRampConfig(payload)
       window.dispatchEvent(new CustomEvent('ramp-updated', { detail: updatedStatus }))
@@ -382,7 +382,7 @@ export function RampSettingsModal({
                 Исключенные задачи (Fallback)
               </Typography>
               <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted, display: 'block', mb: 1.5 }}>
-                Задачи, не участвующие в разгоне. Для них выдается фиксированное время отдыха (по умолчанию: video, movies, games, telegram).
+                Задачи, не участвующие в разгоне. Для них таймер запускается на длину по умолчанию (например: video, movies, games, telegram).
               </Typography>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
                 {excludedTasks.map((t) => (
@@ -436,23 +436,23 @@ export function RampSettingsModal({
 
             <Divider sx={{ borderColor: DESIGN_TOKENS.borderColor }} />
 
-            {/* 5. Default Rest Fallback */}
+            {/* 5. Default timer length for tasks outside the ramp */}
             <Box>
               <Typography variant="subtitle2" fontWeight={700} sx={{ color: DESIGN_TOKENS.textPrimary, mb: 0.5 }}>
-                Время для отдыха и исключений (Fallback)
+                Длина по умолчанию
               </Typography>
               <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted, display: 'block', mb: 1.5 }}>
-                Фиксированная длительность в минутах при старте исключенной задачи без времени (минимум 1 мин).
+                Длина таймера в минутах для задач вне лестницы разгона (минимум 1 мин).
               </Typography>
               <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
-                {REST_PRESETS.map((preset) => {
-                  const isSelected = defaultRestFallback === preset
+                {FALLBACK_PRESETS.map((preset) => {
+                  const isSelected = defaultFallbackMinutes === preset
                   return (
                     <Chip
                       key={preset}
                       label={`${preset} мин`}
                       clickable
-                      onClick={() => setDefaultRestFallback(preset)}
+                      onClick={() => setDefaultFallbackMinutes(preset)}
                       sx={{
                         fontWeight: isSelected ? 700 : 500,
                         bgcolor: isSelected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)',
@@ -467,11 +467,11 @@ export function RampSettingsModal({
               <TextField
                 type="number"
                 size="small"
-                value={defaultRestFallback}
-                onChange={(e) => setDefaultRestFallback(Number(e.target.value))}
+                value={defaultFallbackMinutes}
+                onChange={(e) => setDefaultFallbackMinutes(Number(e.target.value))}
                 inputProps={{ min: 1, max: 120 }}
-                helperText={defaultRestFallback < 1 ? 'Минимум 1 минута' : ''}
-                error={defaultRestFallback < 1}
+                helperText={defaultFallbackMinutes < 1 ? 'Минимум 1 минута' : ''}
+                error={defaultFallbackMinutes < 1}
                 sx={{ width: 160 }}
               />
             </Box>
@@ -494,7 +494,7 @@ export function RampSettingsModal({
         <Button
           variant="contained"
           onClick={handleSave}
-          disabled={saving || loading || capMinutes < 5 || defaultRestFallback < 1}
+          disabled={saving || loading || capMinutes < 5 || defaultFallbackMinutes < 1}
           startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <BoltRoundedIcon />}
           sx={{
             bgcolor: '#F59E0B',

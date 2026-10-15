@@ -1,6 +1,6 @@
 # tracker-web
 
-A modern web interface and Telegram Mini App for `tracker-server`, providing analytics dashboards, weekly schedule editing, plan rotation management, rest tracking, linear warm-up ramp progression, and real-time running-task timers.
+A modern web interface and Telegram Mini App for `tracker-server`, providing analytics dashboards, weekly schedule editing, plan rotation management, weekly debt tracking, linear warm-up ramp progression, and real-time running-task timers.
 
 ## Project Overview
 
@@ -23,30 +23,28 @@ Set `VITE_API_BASE_URL` when the API is not same-origin, for example `VITE_API_B
 - `src/App.tsx`: App shell, route definitions, responsive navigation (desktop top `Header` vs. mobile `BottomNavigation` + `Drawer`), route-based dynamic ambient glow backgrounds, and Telegram WebApp lifecycle (`ready()`, `expand()`, `BackButton`).
 - `src/api/client.ts`: Centralized API client and single source of truth for backend interaction.
   - Contains all DTO interfaces aligned with `tracker-server`'s `openapi.yml`.
-  - Typed request wrappers in `api` object grouped by domain (stats, records, plan-percent, rest, manage, timer, schedule, running-timer, evening-focus, ramp).
+  - Typed request wrappers in `api` object grouped by domain (stats, records, plan-percent, manage, timer, schedule, running-timer, evening-focus, debt, break, ramp).
   - All HTTP requests go through `request<T>()`, which attaches `X-Telegram-Init-Data` header from `window.Telegram.WebApp.initData` when running in Telegram.
   - Exports `getTimerWebSocketUrl()` for WebSocket connections, appending `initData` as query parameter.
 - `src/pages/`: Self-contained route components:
-  - `Dashboard.tsx`: Weekly analytics with tabbed insights (Overview, Daily Breakdown, Task Targets), 24h timeline canvas, role donut chart, Evening Focus card, Today task progress card with search & filtering, and Linear Ramp badge.
+  - `Dashboard.tsx`: Weekly analytics with tabbed insights (Overview, Daily Breakdown, Task Targets), 24h timeline canvas, role donut chart, Evening Focus card (with the evening batch launcher), Debt card, Today task progress card with search & filtering, and Linear Ramp badge.
   - `Schedule.tsx`: Weekly schedule editor with day tabs, task planning with priorities and percent groups, rollover & backlog task viewer, and schedule activation.
   - `Timer.tsx`: Live running tasks, circular canvas timer, WebSocket sync, audio cues, keyboard shortcuts, sequence modes (percent, backlog, evening combo), batch session runner, duration adjusters (+/- minutes), task selection autocomplete, and URL query parameter initialization (`?task=&role=&target=&combo=`).
   - `Plan.tsx`: Next task by plan rotation, plan percent group rotation, and legacy percent configurations (`/api/v1/manage/procents`).
   - `Record.tsx`: Direct manual logging of completed task duration, source day, and service distribution.
-  - `Rest.tsx`: Rest balance tracking with add, spend, and reset (`/api/v1/rest/reset`) actions.
   - `Manage.tsx`: Task creation with role assignment (`work`, `learn`, `rest`, `plan`).
 - `src/components/`:
   - **Presentational**: `Card`, `Header`, `Alert`, `Progress`. Keep free of domain business logic.
-  - **Feature Widgets**: Self-fetching components dropped into pages (`PlanPercents`, `EveningFocusCard`, `RampBadge`, `RampSettingsModal`, `TodayTaskProgressCard`).
+  - **Feature Widgets**: Self-fetching components dropped into pages (`PlanPercents`, `EveningFocusCard`, `DebtCard`, `RampBadge`, `RampSettingsModal`, `TodayTaskProgressCard`). `DayClosedToast` is mounted once in `App.tsx`.
 - `src/components/canvas/`: Hand-drawn high-DPI HTML5 Canvas 2D visualizations scaling for `devicePixelRatio`:
   - `CircularTimerCanvas.tsx`: Radial countdown/countup timer ring with 60 tick marks, role color glow, and smooth animations.
   - `Timeline24hCanvas.tsx`: 24-hour horizontal session timeline bar with role color segments.
   - `DonutChartCanvas.tsx`: Multi-segment donut chart displaying role breakdown percentages.
 - `src/hooks/`:
-  - `useTimerSync.ts`: Real-time WebSocket hook connecting to `/api/v1/timer/ws`. Handles event-driven updates (`STATE_SYNC`, `TASK_STARTED`, `TASK_PAUSED`, `TASK_RESUMED`, `TASK_STOPPED`, `TASK_ADJUSTED`, `HEARTBEAT_ACK`), exponential backoff reconnection, 25s heartbeats (with HTTP fallback), tab visibility re-sync, server clock skew calculation (`serverTimeOffset`), and server auto-stop callbacks.
+  - `useTimerSync.ts`: Real-time WebSocket hook connecting to `/api/v1/timer/ws`. Handles event-driven updates (`STATE_SYNC`, `TASK_STARTED`, `TASK_PAUSED`, `TASK_RESUMED`, `TASK_STOPPED`, `TASK_ADJUSTED`, `HEARTBEAT_ACK`, `DAY_CLOSED`), exponential backoff reconnection, 25s heartbeats (with HTTP fallback), tab visibility re-sync, server clock skew calculation (`serverTimeOffset`), and server auto-stop callbacks.
   - `useHotkeys.ts`: Global keyboard shortcuts (`Space` to toggle play/pause, `1`/`2`/`3` to switch role to work/learn/rest) ignoring input/textarea elements.
 - `src/constants/themeColors.ts`: Role themes (`ROLE_THEMES` for work/learn/rest/other with primary, light, glow, bg, badgeBg colors and Russian labels), `ROLE_COLORS`, `ROLE_TAGS`, `DESIGN_TOKENS` (bgMain, bgCard, bgInput, borderColor, etc.), and `TIMER_PRESETS` ([15, 20, 25, 45, 60]).
 - `src/utils/`:
-  - `format.ts`: `formatRestMinutes` formatting rest minutes from raw units (`units / 100`).
   - `audio.ts`: `soundSynth` zero-asset Web Audio API synthesizer for tactile sound feedback (session start triangle wave ramp, pause sine wave slide, completion bell chord) stored in `localStorage` (`timeflow_sound_enabled`).
 - `src/theme.ts`: MUI dark theme configuring palette, glassmorphism cards/appbar, rounded typography, and custom component styles.
 - `src/styles.css`: App-wide CSS variables, dark utility classes, custom scrollbar styling, and canvas wrapper styling.
@@ -66,10 +64,10 @@ Set `VITE_API_BASE_URL` when the API is not same-origin, for example `VITE_API_B
 - Manages daily cap progression (`cap_minutes`, `current_step`), resetting, advancing, and task role filtering.
 - Component sync: `RampBadge` and `RampSettingsModal` notify other components using `window.dispatchEvent(new CustomEvent('ramp-updated', { detail }))`.
 
-### Rest-Time Representation
-- Rest balance returned by the API is an integer scaled by 100 (`units = minutes * 100`).
-- Always format rest time using `formatRestMinutes(raw)`.
-- Rest page supports adding, spending, and resetting balance (`api.restReset()`).
+### Debt & Evening Batch
+- `GET /api/v1/debt` returns the previous days' unfinished schedule of this week (`total_minutes`, `items` oldest day first, `today_remaining`, 7 `days` with a status). `DebtCard` shows it and refetches on the window event `debt-updated`, which `useTimerSync` dispatches after every `TASK_STOPPED` (and `Timer.tsx` after its own HTTP stop).
+- `DAY_CLOSED` (data `{day, date}`) is re-dispatched by `useTimerSync` as the window event `day-closed`; the app-level `DayClosedToast` shows «День закрыт» and plays a chime.
+- The evening batch in `EveningFocusCard` builds a combo queue (anchor first, then the next candidates) whose items carry `origin: 'batch'` and `debtShare`; `Timer.tsx` passes them to `api.startTask` as `origin` and `debt_share`.
 
 ### Telegram Mini App Integration
 - Telegram WebApp types are globally declared in `src/vite-env.d.ts`.

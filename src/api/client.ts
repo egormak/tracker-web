@@ -59,7 +59,6 @@ export interface PlanPercentsResponse {
 
 export type PlanPercentGroup = 'plan' | 'work' | 'learn' | 'rest'
 
-export interface RestTimeResponse { rest_time: number }
 export interface SuccessResponse { status: string; message?: string }
 
 export interface TaskRecordRequest {
@@ -68,7 +67,6 @@ export interface TaskRecordRequest {
   source_day?: string // Optional: day of the week to record against (e.g., "monday")
   manage_by_service?: boolean // Optional: distribute time to past unfilled schedules
 }
-export interface RestRecordRequest { rest_time: number }
 export interface CreateTaskRequest { task_name: string; role: string }
 export interface TimerSetRequest { count: number }
 export interface TimerResponse { time_duration: number }
@@ -88,7 +86,8 @@ export interface RampConfig {
   enabled_roles: string[]
   enabled_tasks: string[]
   excluded_tasks: string[]
-  default_rest_fallback: number
+  // Timer length (minutes) for tasks outside the ramp ladder
+  default_fallback_minutes: number
 }
 
 export interface RampStatus {
@@ -190,7 +189,7 @@ export interface WeeklyDigest {
 }
 
 // How a started task was chosen, for the server's weekly usage counters.
-export type StartOrigin = 'break' | 'evening' | 'combo'
+export type StartOrigin = 'break' | 'evening' | 'combo' | 'batch'
 
 
 export interface WeeklyStatsResponse {
@@ -307,6 +306,42 @@ export interface TaskRecord {
   time_duration: number
   date: string
   source_day?: string
+  // How the session was distributed on stop; time_duration is the whole session
+  split?: TaskRecordSplit[]
+}
+
+export interface TaskRecordSplit {
+  kind: 'today' | 'debt' | 'tomorrow'
+  day: string
+  date: string
+  minutes: number
+}
+
+// Debt: previous days' unfinished schedule this week (items oldest day first)
+export interface DebtItem {
+  task_name: string
+  role: string
+  day: string // lowercase weekday
+  date: string // e.g. "14 October 2026"
+  remaining: number
+}
+
+export type DebtDayStatus = 'closed' | 'partial' | 'open' | 'today' | 'future' | 'none'
+
+export interface DebtDay {
+  day: string
+  date: string
+  planned: number
+  remaining: number
+  status: DebtDayStatus
+}
+
+export interface DebtSummary {
+  total_minutes: number
+  items: DebtItem[]
+  oldest_day?: string
+  today_remaining: number
+  days: DebtDay[] // Monday..Sunday
 }
 
 // API wrappers
@@ -336,12 +371,6 @@ export const api = {
   // Records
   addTaskRecord: (payload: TaskRecordRequest) => request<SuccessResponse>('POST', '/api/v1/taskrecord', payload),
   cleanRecords: () => request<SuccessResponse>('POST', '/api/v1/records/clean'),
-
-  // Rest
-  restGet: () => request<RestTimeResponse>('GET', '/api/v1/rest/get'),
-  restAdd: (payload: RestRecordRequest) => request<SuccessResponse>('POST', '/api/v1/rest/add', payload),
-  restSpend: (payload: RestRecordRequest) => request<SuccessResponse>('POST', '/api/v1/rest/spend', payload),
-  restReset: () => request<SuccessResponse>('POST', '/api/v1/rest/reset'),
 
   // Manage
   createTask: (payload: CreateTaskRequest) => request<SuccessResponse>('POST', '/api/v1/manage/task/create', payload),
@@ -377,7 +406,7 @@ export const api = {
     request<SuccessResponse>('POST', '/api/v1/schedule/apply'),
 
   // Running Timer
-  startTask: (payload: { task_name: string; role: string; target_duration?: number; source_day?: string; origin?: StartOrigin }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/start', payload),
+  startTask: (payload: { task_name: string; role: string; target_duration?: number; source_day?: string; origin?: StartOrigin; debt_share?: number }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/start', payload),
   stopTask: (payload?: { task_name?: string; reason?: string }) => request<{ status: string; data: TaskRecord }>('POST', '/api/v1/timer/run/stop', payload),
   pauseTask: (payload?: { task_name?: string; reason?: string }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/pause', payload),
   resumeTask: (payload?: { task_name?: string }) => request<{ status: string; data: RunningTask }>('POST', '/api/v1/timer/run/resume', payload),
@@ -390,6 +419,9 @@ export const api = {
     request<{ status: string; data: EveningFocusResponse }>('GET', `/api/v1/mode/evening-focus?${category ? `category=${encodeURIComponent(category)}&` : ''}${time ? `time=${time}` : ''}`),
   skipEveningFocus: (taskName: string, category?: string, time?: number) =>
     request<{ status: string; data: EveningFocusResponse }>('POST', `/api/v1/mode/evening-focus/skip?${category ? `category=${encodeURIComponent(category)}&` : ''}${time ? `time=${time}` : ''}`, { task_name: taskName }),
+
+  // Debt
+  getDebt: () => request<{ status: string; data: DebtSummary }>('GET', '/api/v1/debt'),
 
   // Break selector
   getBreakOptions: () => request<{ status: string; data: BreakOptionsResponse }>('GET', '/api/v1/mode/break-options'),
@@ -423,19 +455,19 @@ export interface EveningFocusCandidate {
   weekly_gap: number
   priority: number
   is_strict: boolean
+  // Previous days' debt + today's remainder for this task (minutes)
+  debt_to_date?: number
 }
 
 export interface EveningFocusResponse {
   current_task: EveningFocusCandidate
   candidates: EveningFocusCandidate[]
   sprint_time: number
-  rest_pool: number
 }
 
 export interface DashboardStateResponse {
   running_task: RunningTask | null
   today_tasks: TaskResult[]
-  rest_pool: number
   evening_focus?: EveningFocusResponse
   total_planned: number
   total_done: number

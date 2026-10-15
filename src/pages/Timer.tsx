@@ -32,7 +32,7 @@ import { BreakSelector } from '../components/BreakSelector'
 import { CircularTimerCanvas } from '../components/canvas/CircularTimerCanvas'
 import { soundSynth } from '../utils/audio'
 import { useHotkeys } from '../hooks/useHotkeys'
-import { useTimerSync } from '../hooks/useTimerSync'
+import { useTimerSync, DEBT_UPDATED_EVENT } from '../hooks/useTimerSync'
 import { ROLE_THEMES, ROLE_TAGS, TIMER_PRESETS, DESIGN_TOKENS } from '../constants/themeColors'
 
 type SequenceMode = 'none' | 'percent' | 'backlog' | 'evening'
@@ -42,6 +42,10 @@ export interface ComboItem {
   taskName: string
   role: string
   duration: number
+  // Optional so sessions stored before the evening batch still load
+  origin?: StartOrigin
+  // Percent (0-100) of the session that pays this task's past debt on stop
+  debtShare?: number
 }
 
 export const COMBO_STORAGE_KEY = 'tracker_evening_combo_session'
@@ -587,7 +591,8 @@ export default function Timer() {
           task_name: stepTask.taskName,
           role: stepTask.role || 'work',
           target_duration: stepTask.duration,
-          origin: 'combo',
+          origin: stepTask.origin ?? 'combo',
+          debt_share: stepTask.debtShare,
         })
         soundSynth.playStart()
         setRunningTasks((prev) => [...prev.filter((t) => t.task_name !== stepTask.taskName), res.data])
@@ -785,6 +790,8 @@ export default function Timer() {
     api.getRampStatus().then((newStatus) => {
       window.dispatchEvent(new CustomEvent('ramp-updated', { detail: newStatus }))
     }).catch(() => {})
+    // The stop may have paid off debt (the WebSocket also signals this when connected)
+    window.dispatchEvent(new CustomEvent(DEBT_UPDATED_EVENT))
 
     if (autoBlocked || isCombo || isBatch) {
       playCompletionCue(tName, stoppingRole)
@@ -1221,7 +1228,7 @@ export default function Timer() {
                   <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
                     <FlashOnRoundedIcon sx={{ color: '#F472B6', fontSize: '1.5rem' }} />
                     <Typography variant="subtitle1" fontWeight={800} sx={{ color: '#FDF2F8', letterSpacing: '-0.01em' }}>
-                      ⚡️ Вечерняя комбо-цепочка: Шаг {comboIndex + 1} из {comboQueue.length} — {comboQueue[comboIndex].taskName} ({comboQueue[comboIndex].duration} мин)
+                      ⚡️ {comboQueue[comboIndex].origin === 'batch' ? 'Батч' : 'Вечерняя комбо-цепочка'}: Шаг {comboIndex + 1} из {comboQueue.length} — {comboQueue[comboIndex].taskName} ({comboQueue[comboIndex].duration} мин)
                     </Typography>
                   </Stack>
 

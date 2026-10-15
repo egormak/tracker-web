@@ -19,7 +19,7 @@ import NightlightRoundIcon from '@mui/icons-material/NightlightRound'
 import FlashOnRoundedIcon from '@mui/icons-material/FlashOnRounded'
 import { api, EveningFocusResponse, EveningFocusCandidate } from '../api/client'
 import { ROLE_THEMES, DESIGN_TOKENS } from '../constants/themeColors'
-import { saveStoredCombo } from '../pages/Timer'
+import { saveStoredCombo, ComboItem } from '../pages/Timer'
 
 interface EveningFocusCardProps {
   onStartTask?: (taskName: string, role: string, duration?: number) => void
@@ -30,7 +30,11 @@ export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask 
   const [loading, setLoading] = useState<boolean>(true)
   const [data, setData] = useState<EveningFocusResponse | null>(null)
   const [sprintTime, setSprintTime] = useState<number>(20)
-  const [comboDuration, setComboDuration] = useState<number>(10)
+  // Evening batch: anchor task + next candidates, each a sprint that may pay past debt
+  const [batchAnchor, setBatchAnchor] = useState<string | null>(null)
+  const [batchSprint, setBatchSprint] = useState<number>(15)
+  const [batchDebtShare, setBatchDebtShare] = useState<number>(0)
+  const [batchCount, setBatchCount] = useState<number>(3)
 
   const fetchFocus = async (time: number = sprintTime) => {
     setLoading(true)
@@ -48,7 +52,11 @@ export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask 
     fetchFocus(sprintTime)
   }, [sprintTime])
 
-  const topCandidates = (data?.candidates || []).slice(0, 3)
+  const allCandidates = data?.candidates || []
+  const topCandidates = allCandidates.slice(0, 3)
+  // Falls back to the first candidate when nothing is picked or the pick left the list
+  const anchorCandidate =
+    allCandidates.find((c) => c.task_name === batchAnchor) || allCandidates[0] || null
   const isEmpty = !data || topCandidates.length === 0 || (!data.current_task?.task_name && topCandidates.length === 0)
 
   const handleStartCandidate = (candidate: EveningFocusCandidate) => {
@@ -86,22 +94,58 @@ export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask 
     }
   }
 
-  const handleLaunchCombo = () => {
-    if (topCandidates.length === 0) return
-    const comboPayload = topCandidates.map((c) => ({
-      taskName: c.task_name,
-      role: c.role || 'work',
-      duration: comboDuration,
-    }))
-    saveStoredCombo(comboPayload, 0)
-    navigate(`/timer?combo=${encodeURIComponent(JSON.stringify(comboPayload))}`)
+  // Anchor first, then the next candidates in server order (by debt_to_date), up to N tasks
+  const batchQueue: ComboItem[] = anchorCandidate
+    ? [anchorCandidate, ...allCandidates.filter((c) => c.task_name !== anchorCandidate.task_name)]
+        .slice(0, batchCount)
+        .map((c) => ({
+          taskName: c.task_name,
+          role: c.role || 'work',
+          duration: batchSprint,
+          origin: 'batch' as const,
+          debtShare: batchDebtShare,
+        }))
+    : []
+
+  const handleLaunchBatch = () => {
+    if (batchQueue.length === 0) return
+    saveStoredCombo(batchQueue, 0)
+    navigate(`/timer?combo=${encodeURIComponent(JSON.stringify(batchQueue))}`)
   }
+
+  const renderOptionChip = (key: string | number, label: string, selected: boolean, onClick: () => void) => (
+    <Chip
+      key={key}
+      label={label}
+      size="small"
+      onClick={onClick}
+      sx={{
+        cursor: 'pointer',
+        fontWeight: selected ? 700 : 500,
+        bgcolor: selected ? 'rgba(236, 72, 153, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+        color: selected ? '#F472B6' : DESIGN_TOKENS.textSecondary,
+        border: selected ? '1px solid rgba(236, 72, 153, 0.5)' : `1px solid ${DESIGN_TOKENS.borderColor}`,
+        fontSize: '0.75rem',
+        height: 24,
+        maxWidth: 180,
+      }}
+    />
+  )
+
+  const renderOptionRow = (title: string, chips: React.ReactNode) => (
+    <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" useFlexGap>
+      <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted, fontWeight: 600, minWidth: 64 }}>
+        {title}
+      </Typography>
+      {chips}
+    </Stack>
+  )
 
   const renderRankBadge = (idx: number) => {
     if (idx === 0) {
       return (
         <Chip
-          label="#1 Топ дефицит"
+          label="#1 Топ долг"
           size="small"
           sx={{
             fontWeight: 800,
@@ -187,18 +231,6 @@ export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask 
             </Box>
           </Stack>
 
-          {data?.rest_pool !== undefined && data.rest_pool > 0 && (
-            <Chip
-              size="small"
-              label={`⏱️ Лимит отдыха: ${data.rest_pool} мин`}
-              sx={{
-                bgcolor: 'rgba(139, 92, 246, 0.15)',
-                color: '#DDD6FE',
-                border: '1px solid rgba(139, 92, 246, 0.3)',
-                fontSize: '0.75rem',
-              }}
-            />
-          )}
         </Stack>
 
         {loading ? (
@@ -211,7 +243,7 @@ export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask 
           </Typography>
         ) : (
           <>
-            {/* Toolbar: Sprint Duration chips & Sequential Combo Launcher */}
+            {/* Toolbar: sprint duration for single starts */}
             <Stack
               direction={{ xs: 'column', md: 'row' }}
               justifyContent="space-between"
@@ -246,37 +278,49 @@ export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask 
                   />
                 ))}
               </Stack>
+            </Stack>
 
-              {/* Sequential Combo Sprint Chain Launcher */}
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                <Stack direction="row" spacing={0.5} alignItems="center">
-                  <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted, fontWeight: 600 }}>
-                    Комбо:
-                  </Typography>
-                  {[10, 15].map((cd) => (
-                    <Chip
-                      key={cd}
-                      label={`${cd}м`}
-                      size="small"
-                      onClick={() => setComboDuration(cd)}
-                      sx={{
-                        cursor: 'pointer',
-                        fontWeight: comboDuration === cd ? 700 : 500,
-                        bgcolor: comboDuration === cd ? 'rgba(236, 72, 153, 0.25)' : 'rgba(255, 255, 255, 0.04)',
-                        color: comboDuration === cd ? '#F472B6' : DESIGN_TOKENS.textSecondary,
-                        border: comboDuration === cd ? '1px solid rgba(236, 72, 153, 0.5)' : `1px solid ${DESIGN_TOKENS.borderColor}`,
-                        fontSize: '0.75rem',
-                        height: 24,
-                      }}
-                    />
-                  ))}
-                </Stack>
+            {/* Evening batch launcher: anchor + next candidates, optional debt share */}
+            <Stack
+              spacing={1}
+              sx={{
+                mb: 2.5,
+                p: 1.5,
+                bgcolor: 'rgba(15, 23, 42, 0.6)',
+                borderRadius: 2.5,
+                border: '1px solid rgba(236, 72, 153, 0.25)',
+              }}
+            >
+              <Typography variant="caption" sx={{ color: '#F472B6', fontWeight: 800, letterSpacing: '0.02em' }}>
+                ⚡️ Батч
+              </Typography>
+              {renderOptionRow(
+                'Якорь:',
+                allCandidates.slice(0, 8).map((c) =>
+                  renderOptionChip(c.task_name, c.task_name, anchorCandidate?.task_name === c.task_name, () =>
+                    setBatchAnchor(c.task_name)
+                  )
+                )
+              )}
+              {renderOptionRow(
+                'Спринт:',
+                [15, 20, 30].map((t) => renderOptionChip(t, `${t}м`, batchSprint === t, () => setBatchSprint(t)))
+              )}
+              {renderOptionRow(
+                'В долг:',
+                [0, 25, 50, 100].map((p) => renderOptionChip(p, `${p}%`, batchDebtShare === p, () => setBatchDebtShare(p)))
+              )}
+              {renderOptionRow(
+                'Задач:',
+                [3, 4].map((n) => renderOptionChip(n, `${n}`, batchCount === n, () => setBatchCount(n)))
+              )}
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }}>
                 <Button
                   variant="contained"
                   size="small"
                   startIcon={<FlashOnRoundedIcon />}
-                  disabled={topCandidates.length === 0}
-                  onClick={handleLaunchCombo}
+                  disabled={batchQueue.length === 0}
+                  onClick={handleLaunchBatch}
                   sx={{
                     bgcolor: '#EC4899',
                     color: '#FFFFFF',
@@ -289,8 +333,11 @@ export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask 
                     },
                   }}
                 >
-                  ⚡️ Запустить комбо-цепочку {topCandidates.length}x{comboDuration}м
+                  Запустить батч {batchQueue.length}×{batchSprint}м
                 </Button>
+                <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted }}>
+                  {batchQueue.map((q) => q.taskName).join(' → ')}
+                </Typography>
               </Stack>
             </Stack>
 
@@ -365,7 +412,8 @@ export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask 
                         <Box sx={{ mb: 2 }}>
                           <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
                             <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textSecondary, fontSize: '0.72rem' }}>
-                              📊 {candidate.weekly_done || 0} / {candidate.weekly_target || 0} мин (дефицит {candidate.weekly_gap} мин)
+                              📊 {candidate.weekly_done || 0} / {candidate.weekly_target || 0} мин
+                              {candidate.debt_to_date !== undefined ? ` · долг ${candidate.debt_to_date}м` : ` · дефицит ${candidate.weekly_gap} мин`}
                             </Typography>
                             <Typography
                               variant="caption"
