@@ -88,5 +88,5 @@ Both are saved in `localStorage` so they survive reloads. These are the only cli
 
 ## Deployment
 
-- `Dockerfile` builds the app with Vite (accepting `VITE_API_BASE_URL` as a build arg) and serves the static output via nginx (`nginx.conf`), which proxies `/api` at container runtime to `TRACKER_SERVER_URL` (env var, default `http://api:3000`).
+- `Dockerfile` builds the app with Vite (accepting `VITE_API_BASE_URL` as a build arg) and serves the static output via nginx (`nginx.conf`), which proxies `/api` at container runtime to `TRACKER_SERVER_URL` (env var, default `http://api:3000`). `/api/v1/timer/ws` has its own location with HTTP/1.1 and the `Upgrade`/`Connection` headers — without them tracker-server answers 426 and the page never gets live events.
 - `.github/workflows/docker-image.yml` builds on every push/PR to `main`; on push to `main` it publishes `ghcr.io/egormak/tracker-web:<YYYY-MM-DD>` and `:latest`.
