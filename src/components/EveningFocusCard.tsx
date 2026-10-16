@@ -94,10 +94,15 @@ export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask 
     }
   }
 
+  // The anchor is always a candidate, so a batch holds 1..candidates tasks; the default 3
+  // shrinks when fewer are left tonight
+  const batchMax = allCandidates.length
+  const batchSize = Math.min(batchCount, batchMax)
+
   // Anchor first, then the next candidates in server order (by debt_to_date), up to N tasks
   const batchQueue: ComboItem[] = anchorCandidate
     ? [anchorCandidate, ...allCandidates.filter((c) => c.task_name !== anchorCandidate.task_name)]
-        .slice(0, batchCount)
+        .slice(0, batchSize)
         .map((c) => ({
           taskName: c.task_name,
           role: c.role || 'work',
@@ -312,7 +317,9 @@ export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask 
               )}
               {renderOptionRow(
                 'Задач:',
-                [3, 4].map((n) => renderOptionChip(n, `${n}`, batchCount === n, () => setBatchCount(n)))
+                Array.from({ length: batchMax }, (_, i) => i + 1).map((n) =>
+                  renderOptionChip(n, `${n}`, batchSize === n, () => setBatchCount(n))
+                )
               )}
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }}>
                 <Button

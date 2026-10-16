@@ -62,7 +62,7 @@ In `Timer.tsx`, each `TaskTimerItem` ticks locally every 1s. It computes `accumu
 
 `Timer.tsx` also runs two client-side multi-task flows on top of the server timer:
 
-- The evening-focus combo chain (`tracker_evening_combo_session`), which expires after 4h. `EveningFocusCard`'s «Батч» launcher fills it: anchor candidate first, then the next candidates in server order (by `debt_to_date`), 3 or 4 tasks, each a `ComboItem` with `origin: 'batch'` and `debtShare`. `startComboStep` sends `origin: item.origin ?? 'combo'` and `debt_share: item.debtShare`; both fields are optional so older stored sessions still load.
+- The evening-focus combo chain (`tracker_evening_combo_session`), which expires after 4h. `EveningFocusCard`'s «Батч» launcher fills it: anchor candidate first, then the next candidates in server order (by `debt_to_date`), 1 to the number of candidates (the anchor is always one of them; the default 3 shrinks to fit), each a `ComboItem` with `origin: 'batch'` and `debtShare`. `startComboStep` sends `origin: item.origin ?? 'combo'` and `debt_share: item.debtShare`; both fields are optional so older stored sessions still load.
 - The batch session (`tracker_batch_session`).
 
 Both are saved in `localStorage` so they survive reloads. These are the only client-held state in the app. The server still decides what is running; these sessions only decide what to start next.
