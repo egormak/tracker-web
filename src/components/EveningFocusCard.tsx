@@ -33,6 +33,8 @@ export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask 
   // Evening batch: anchor task + next candidates, each a sprint that may pay past debt
   const [batchAnchor, setBatchAnchor] = useState<string | null>(null)
   const [batchSprint, setBatchSprint] = useState<number>(15)
+  // null = the anchor runs as long as the other sprints
+  const [batchAnchorSprint, setBatchAnchorSprint] = useState<number | null>(null)
   const [batchDebtShare, setBatchDebtShare] = useState<number>(0)
   const [batchCount, setBatchCount] = useState<number>(3)
 
@@ -103,10 +105,10 @@ export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask 
   const batchQueue: ComboItem[] = anchorCandidate
     ? [anchorCandidate, ...allCandidates.filter((c) => c.task_name !== anchorCandidate.task_name)]
         .slice(0, batchSize)
-        .map((c) => ({
+        .map((c, idx) => ({
           taskName: c.task_name,
           role: c.role || 'work',
-          duration: batchSprint,
+          duration: idx === 0 && batchAnchorSprint ? batchAnchorSprint : batchSprint,
           origin: 'batch' as const,
           debtShare: batchDebtShare,
         }))
@@ -308,7 +310,15 @@ export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask 
                 )
               )}
               {renderOptionRow(
-                'Спринт:',
+                'Якорю:',
+                [null, 30, 45, 60, 90].map((t) =>
+                  renderOptionChip(t ?? 'same', t ? `${t}м` : 'как всем', batchAnchorSprint === t, () =>
+                    setBatchAnchorSprint(t)
+                  )
+                )
+              )}
+              {renderOptionRow(
+                batchAnchorSprint ? 'Остальным:' : 'Спринт:',
                 [15, 20, 30].map((t) => renderOptionChip(t, `${t}м`, batchSprint === t, () => setBatchSprint(t)))
               )}
               {renderOptionRow(
@@ -340,10 +350,15 @@ export const EveningFocusCard: React.FC<EveningFocusCardProps> = ({ onStartTask 
                     },
                   }}
                 >
-                  Запустить батч {batchQueue.length}×{batchSprint}м
+                  Запустить батч{' '}
+                  {batchAnchorSprint && batchQueue.length > 0
+                    ? `${batchQueue[0].duration}м` + (batchQueue.length > 1 ? ` + ${batchQueue.length - 1}×${batchSprint}м` : '')
+                    : `${batchQueue.length}×${batchSprint}м`}
                 </Button>
                 <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted }}>
-                  {batchQueue.map((q) => q.taskName).join(' → ')}
+                  {batchQueue
+                    .map((q, idx) => (idx === 0 && batchAnchorSprint ? `${q.taskName} ${q.duration}м` : q.taskName))
+                    .join(' → ')}
                 </Typography>
               </Stack>
             </Stack>
