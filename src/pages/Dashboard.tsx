@@ -93,13 +93,14 @@ export default function Dashboard() {
     }
   }, [])
 
-  const handleStartTask = async (taskName: string, role: string, duration?: number, origin?: StartOrigin) => {
+  const handleStartTask = async (taskName: string, role: string, duration?: number, origin?: StartOrigin, debtShare?: number) => {
     try {
       await api.startTask({
         task_name: taskName,
         role: role || 'work',
         target_duration: duration || 25,
         origin,
+        debt_share: debtShare || undefined,
       })
       navigate(`/timer?task=${encodeURIComponent(taskName)}&role=${encodeURIComponent(role)}&target=${duration || 25}`)
     } catch (_e) {
@@ -390,7 +391,7 @@ export default function Dashboard() {
             tasks={tasks}
             runningTasks={runningTasks}
             isDemoMode={isDemoMode}
-            onStartTask={handleStartTask}
+            onStartTask={(name, taskRole, duration, debtShare) => handleStartTask(name, taskRole, duration, undefined, debtShare)}
             onApplySchedule={handleApplySchedule}
           />
         </Grid>

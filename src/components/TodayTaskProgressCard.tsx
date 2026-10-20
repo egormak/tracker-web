@@ -1,4 +1,4 @@
-import { useState, useMemo, FC } from 'react'
+import { useState, useMemo, useEffect, useCallback, FC } from 'react'
 import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Grid from '@mui/material/Grid'
@@ -35,16 +35,31 @@ import SpeedRoundedIcon from '@mui/icons-material/SpeedRounded'
 import DoneAllRoundedIcon from '@mui/icons-material/DoneAllRounded'
 import PlayCircleFilledWhiteRoundedIcon from '@mui/icons-material/PlayCircleFilledWhiteRounded'
 
-import { TaskResult, RunningTask } from '../api/client'
+import { api, TaskResult, RunningTask } from '../api/client'
 import Card from './Card'
 import { DESIGN_TOKENS, ROLE_COLORS, ROLE_THEMES } from '../constants/themeColors'
+import { DEBT_UPDATED_EVENT } from '../hooks/useTimerSync'
 
 export interface TodayTaskProgressCardProps {
   tasks: TaskResult[]
   runningTasks?: RunningTask[]
   isDemoMode?: boolean
-  onStartTask?: (taskName: string, role: string, duration?: number) => void
+  // debtShare: % (0-100) of the session that pays the task's past debt on stop
+  onStartTask?: (taskName: string, role: string, duration?: number, debtShare?: number) => void
   onApplySchedule?: () => void
+}
+
+const DEBT_SHARE_OPTIONS = [0, 25, 50, 100]
+const DEBT_SHARE_STORAGE_KEY = 'tracker_today_debt_share'
+const DEBT_ACCENT = '#F59E0B'
+
+function loadDebtShare(): number {
+  try {
+    const v = Number(localStorage.getItem(DEBT_SHARE_STORAGE_KEY))
+    return DEBT_SHARE_OPTIONS.includes(v) ? v : 0
+  } catch {
+    return 0
+  }
 }
 
 // Demo tasks for preview mode
@@ -71,6 +86,66 @@ export const TodayTaskProgressCard: FC<TodayTaskProgressCardProps> = ({
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<'priority' | 'progress_desc' | 'progress_asc' | 'remaining' | 'name'>('priority')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [debtShare, setDebtShare] = useState<number>(loadDebtShare)
+  // Past-days debt per task (lowercased name -> minutes)
+  const [debtByTask, setDebtByTask] = useState<Record<string, number>>({})
+
+  const changeDebtShare = (p: number) => {
+    setDebtShare(p)
+    try {
+      localStorage.setItem(DEBT_SHARE_STORAGE_KEY, String(p))
+    } catch {
+      // storage unavailable: the choice lasts until reload
+    }
+  }
+
+  const fetchDebt = useCallback(async () => {
+    try {
+      const res = await api.getDebt()
+      const byTask: Record<string, number> = {}
+      for (const it of res.data?.items || []) {
+        const key = it.task_name.toLowerCase()
+        byTask[key] = (byTask[key] || 0) + it.remaining
+      }
+      setDebtByTask(byTask)
+    } catch {
+      // the debt chips are a hint; the card works without them
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isDemoMode) return
+    fetchDebt()
+    window.addEventListener(DEBT_UPDATED_EVENT, fetchDebt)
+    return () => window.removeEventListener(DEBT_UPDATED_EVENT, fetchDebt)
+  }, [isDemoMode, fetchDebt])
+
+  const taskDebt = (name: string) => (isDemoMode ? 0 : debtByTask[name.toLowerCase()] || 0)
+
+  const startTask = (t: TaskResult, remaining: number) => {
+    if (!onStartTask) return
+    // A share with no debt to pay is harmless: the server returns the unused part to today
+    onStartTask(t.name, t.role, remaining > 0 ? remaining : 25, debtShare)
+  }
+
+  const renderDebtChip = (minutes: number) =>
+    minutes > 0 ? (
+      <Tooltip title="Недобор за прошлые дни недели" placement="top">
+        <Chip
+          size="small"
+          label={`долг ${minutes}м`}
+          sx={{
+            height: 22,
+            fontSize: '0.68rem',
+            fontFamily: DESIGN_TOKENS.fontMono,
+            fontWeight: 700,
+            bgcolor: 'rgba(245, 158, 11, 0.14)',
+            color: DEBT_ACCENT,
+            border: `1px solid ${DEBT_ACCENT}55`,
+          }}
+        />
+      </Tooltip>
+    ) : null
 
   const tasks = useMemo(() => {
     return isDemoMode ? DEMO_TASKS : realTasks
@@ -532,6 +607,45 @@ export const TodayTaskProgressCard: FC<TodayTaskProgressCardProps> = ({
               <ToggleButton value="completed">Готово ({analytics.completedCount})</ToggleButton>
             </ToggleButtonGroup>
 
+            {/* Debt share for the start buttons */}
+            <Stack direction="row" spacing={0.8} alignItems="center">
+              <Tooltip title="Какая доля сессии пойдёт в долг задачи за прошлые дни" placement="top">
+                <Typography variant="caption" sx={{ color: DEBT_ACCENT, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                  В долг:
+                </Typography>
+              </Tooltip>
+              <ToggleButtonGroup
+                size="small"
+                value={debtShare}
+                exclusive
+                onChange={(_, val) => val !== null && changeDebtShare(val)}
+                sx={{
+                  bgcolor: 'rgba(15, 23, 42, 0.7)',
+                  borderRadius: 2.5,
+                  border: `1px solid ${DESIGN_TOKENS.borderColor}`,
+                  '& .MuiToggleButton-root': {
+                    color: DESIGN_TOKENS.textSecondary,
+                    fontSize: '0.75rem',
+                    textTransform: 'none',
+                    px: 1.2,
+                    py: 0.5,
+                    border: 'none',
+                    '&.Mui-selected': {
+                      bgcolor: 'rgba(245, 158, 11, 0.18)',
+                      color: DEBT_ACCENT,
+                      fontWeight: 700,
+                    },
+                  },
+                }}
+              >
+                {DEBT_SHARE_OPTIONS.map((p) => (
+                  <ToggleButton key={p} value={p}>
+                    {p}%
+                  </ToggleButton>
+                ))}
+              </ToggleButtonGroup>
+            </Stack>
+
             {/* Sorting Select */}
             <FormControl size="small" sx={{ minWidth: 160 }}>
               <Select
@@ -727,6 +841,7 @@ export const TodayTaskProgressCard: FC<TodayTaskProgressCardProps> = ({
                             />
                           </Tooltip>
                         )}
+                        {renderDebtChip(taskDebt(t.name))}
                       </Stack>
 
                       {/* Status / Live Badge */}
@@ -852,7 +967,7 @@ export const TodayTaskProgressCard: FC<TodayTaskProgressCardProps> = ({
                         size="small"
                         variant={isRunning ? 'contained' : 'outlined'}
                         startIcon={isRunning ? <TimelapseRoundedIcon /> : <PlayArrowRoundedIcon />}
-                        onClick={() => onStartTask(t.name, t.role, remaining > 0 ? remaining : 25)}
+                        onClick={() => startTask(t, remaining)}
                         disabled={isRunning}
                         sx={{
                           borderRadius: 2,
@@ -930,6 +1045,11 @@ export const TodayTaskProgressCard: FC<TodayTaskProgressCardProps> = ({
                             </Typography>
                             <Typography variant="caption" sx={{ color: DESIGN_TOKENS.textMuted }}>
                               {theme.label} • Приоритет P{t.priority}
+                              {taskDebt(t.name) > 0 && (
+                                <Box component="span" sx={{ color: DEBT_ACCENT, fontWeight: 700 }}>
+                                  {` • долг ${taskDebt(t.name)}м`}
+                                </Box>
+                              )}
                             </Typography>
                           </Box>
                         </Stack>
@@ -976,7 +1096,7 @@ export const TodayTaskProgressCard: FC<TodayTaskProgressCardProps> = ({
                             size="small"
                             variant={isRunning ? 'contained' : 'outlined'}
                             startIcon={isRunning ? <TimelapseRoundedIcon /> : <PlayArrowRoundedIcon />}
-                            onClick={() => onStartTask(t.name, t.role, remaining > 0 ? remaining : 25)}
+                            onClick={() => startTask(t, remaining)}
                             disabled={isRunning}
                             sx={{
                               borderRadius: 2,
