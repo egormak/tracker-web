@@ -706,8 +706,8 @@ export default function Timer() {
   useEffect(() => {
     const loadTasks = async () => {
       try {
-        const tasks = await api.getTaskList()
-        setAvailableTasks(tasks)
+        const state = await api.getDashboardState()
+        setAvailableTasks(state.today_tasks)
       } catch (e) {
         console.error('Failed to load tasks', e)
       }

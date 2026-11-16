@@ -38,7 +38,7 @@ import FavoriteBorderOutlinedIcon from '@mui/icons-material/FavoriteBorderOutlin
 import HistoryEduOutlinedIcon from '@mui/icons-material/HistoryEduOutlined'
 
 import { useNavigate } from 'react-router-dom'
-import { api, RecordsSummary, TaskResult, WeeklyStatsResponse, RunningTask, StartOrigin } from '../api/client'
+import { api, TaskResult, WeeklyStatsResponse, RunningTask, StartOrigin } from '../api/client'
 import Alert from '../components/Alert'
 import Card from '../components/Card'
 import Progress from '../components/Progress'
@@ -52,7 +52,6 @@ import { DonutChartCanvas, DonutSegment } from '../components/canvas/DonutChartC
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const [records, setRecords] = useState<RecordsSummary | null>(null)
   const [tasks, setTasks] = useState<TaskResult[]>([])
   const [weeklyStats, setWeeklyStats] = useState<WeeklyStatsResponse | null>(null)
   const [runningTasks, setRunningTasks] = useState<RunningTask[]>([])
@@ -70,15 +69,13 @@ export default function Dashboard() {
     let mounted = true
     async function load() {
       try {
-        const [rec, tl, ws, rt] = await Promise.all([
-          api.getRecordsSummary(),
-          api.getStatsTasksToday(),
+        const [state, ws, rt] = await Promise.all([
+          api.getDashboardState(),
           api.getWeeklyStats(),
           api.getRunningTasks().catch(() => ({ data: [] })),
         ])
         if (!mounted) return
-        setRecords(rec)
-        setTasks(tl)
+        setTasks(state.today_tasks)
         setWeeklyStats(ws)
         setRunningTasks(rt.data || [])
       } catch (e: any) {
@@ -112,12 +109,12 @@ export default function Dashboard() {
     try {
       setError(null)
       await api.applySchedule()
-      const [rec, tl] = await Promise.all([
-        api.getRecordsSummary(),
-        api.getStatsTasksToday(),
+      const [state, ws] = await Promise.all([
+        api.getDashboardState(),
+        api.getWeeklyStats(),
       ])
-      setRecords(rec)
-      setTasks(tl)
+      setTasks(state.today_tasks)
+      setWeeklyStats(ws)
     } catch (e: any) {
       setError(e.message)
     }
@@ -162,14 +159,18 @@ export default function Dashboard() {
     return Math.max(...weeklyStats.days.map((d) => d.total_done), 60)
   }, [weeklyStats])
 
+  // Today's entry of the current week (Monday = 0, as selectedDayIndex); on Monday yesterday is in the previous week and counts 0
+  const todayIndex = (new Date().getDay() + 6) % 7
+  const todayStats = weeklyStats?.days[todayIndex]
+
   const totals = useMemo(() => {
-    const sum = (m?: Record<string, number>) => Object.values(m || {}).reduce((a, b) => a + b, 0)
-    const today = sum(records?.today)
-    const yesterday = sum(records?.yesterday)
-    const all = sum(records?.all)
+    const days = weeklyStats?.days ?? []
+    const today = days[todayIndex]?.total_done ?? 0
+    const yesterday = todayIndex > 0 ? (days[todayIndex - 1]?.total_done ?? 0) : 0
+    const all = days.reduce((a, d) => a + d.total_done, 0)
     const vsYesterday = yesterday ? Math.round((today / yesterday) * 100) : 0
     return { today, yesterday, all, vsYesterday }
-  }, [records])
+  }, [weeklyStats, todayIndex])
 
   // Demo Day Sessions
   const demoSessions: TimelineSession[] = useMemo(
@@ -245,8 +246,8 @@ export default function Dashboard() {
 
     const roleSums: Record<string, number> = { work: 0, learn: 0, rest: 0, other: 0 }
 
-    if (records?.today) {
-      Object.entries(records.today).forEach(([name, minutes]) => {
+    if (todayStats) {
+      todayStats.tasks.forEach(({ name, time_done: minutes }) => {
         const matchingTask = tasks.find((t) => t.name.toLowerCase() === name.toLowerCase())
         const role = matchingTask?.role || 'work'
         if (role in roleSums) {
@@ -262,7 +263,7 @@ export default function Dashboard() {
       { role: 'learn', minutes: roleSums.learn, label: 'Изучение' },
       { role: 'rest', minutes: roleSums.rest, label: 'Отдых' },
     ].filter((s) => s.minutes > 0)
-  }, [records, tasks, isDemoMode])
+  }, [todayStats, tasks, isDemoMode])
 
   // Focus & Balance Health Score Algorithm
   const balanceAnalytics = useMemo(() => {
@@ -499,12 +500,12 @@ export default function Dashboard() {
                 <Skeleton variant="rounded" height={160} animation="wave" />
               </Stack>
             )}
-            {!loading && (!records || Object.keys(records.today || {}).length === 0) && !isDemoMode && (
+            {!loading && (todayStats?.total_done ?? 0) === 0 && !isDemoMode && (
               <Typography color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
                 Нет записанных данных за сегодня. Запустите таймер или включите превью.
               </Typography>
             )}
-            {((records && Object.keys(records.today || {}).length > 0) || isDemoMode) && (
+            {((todayStats?.total_done ?? 0) > 0 || isDemoMode) && (
               <Grid container spacing={2} alignItems="center">
                 <Grid item xs={12} sm={6}>
                   <DonutChartCanvas segments={donutSegments} size={160} thickness={12} centerLabel="Сегодня" />

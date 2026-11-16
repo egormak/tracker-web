@@ -68,17 +68,6 @@ export interface TaskRecordRequest {
   manage_by_service?: boolean // Optional: distribute time to past unfilled schedules
 }
 export interface CreateTaskRequest { task_name: string; role: string }
-export interface TimerSetRequest { count: number }
-export interface TimerResponse { time_duration: number }
-export interface TimerGlobalResponse { timer_global: number }
-export interface TimerGlobalSetRequest { time_scheduler: number }
-
-// Records summary (today/yesterday/all)
-export interface RecordsSummary {
-  today: Record<string, number>
-  yesterday: Record<string, number>
-  all: Record<string, number>
-}
 
 // Linear Warm-Up Ramp (Warm-Up Ladder 2.0)
 export interface RampConfig {
@@ -348,15 +337,9 @@ export interface DebtSummary {
 export const api = {
   // Statistics
   getDashboardState: () => request<DashboardStateResponse>('GET', '/api/v1/dashboard/state'),
-  getStatsDoneToday: () => request<TaskResult[]>('GET', '/api/v1/stats/done/today'),
-  getStatsTasksToday: () => request<TaskResult[]>('GET', '/api/v1/stats/tasks/today'),
   getWeeklyStats: () => request<WeeklyStatsResponse>('GET', '/api/v1/stats/weekly'),
   getWeeklyDigest: (week: 'current' | 'previous' = 'current') =>
     request<WeeklyDigest>('GET', `/api/v1/stats/weekly/digest?week=${week}`),
-  // Records summary
-  getRecordsSummary: () => request<RecordsSummary>('GET', '/api/v1/records'),
-  // Task list with planned vs done (today)
-  getTaskList: () => request<TaskResult[]>('GET', '/api/v1/tasklist'),
 
   // Task plan percent
   getTaskPlanPercent: () => request<PlanPercentResponse>('GET', '/api/v1/task/plan/percent'),
@@ -374,12 +357,6 @@ export const api = {
 
   // Manage
   createTask: (payload: CreateTaskRequest) => request<SuccessResponse>('POST', '/api/v1/manage/task/create', payload),
-
-  // Timer
-  timerGet: () => request<TimerResponse>('GET', '/api/v1/timer/get'),
-  timerSet: (payload: TimerSetRequest) => request<SuccessResponse>('POST', '/api/v1/timer/set', payload),
-  timerGlobalGet: () => request<TimerGlobalResponse>('GET', '/api/v1/manage/timer/global'),
-  timerGlobalSet: (payload: TimerGlobalSetRequest) => request<SuccessResponse>('POST', '/api/v1/manage/timer/global', payload),
 
   // Schedule
   createSchedule: (payload: ScheduleRequest) =>
